@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log"
 	"lsm/memtable"
+	"lsm/sstable"
+	"lsm/storage"
 )
 
 const (
@@ -11,17 +13,26 @@ const (
 )
 
 type DB struct {
-	memtables struct {
+	dataStorage *storage.Provider
+	memtables   struct {
 		mutable *memtable.Memtable
 		queue   []*memtable.Memtable // to be flushed
 	}
 }
 
-func Open() *DB {
-	db := &DB{}
+func Open(dirname string) (*DB, error) {
+	dataStorage, err := storage.NewProvider(dirname)
+	if err != nil {
+		return nil, err
+	}
+
+	db := &DB{
+		dataStorage: dataStorage,
+	}
 	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-	return db
+
+	return db, nil
 }
 
 func (db *DB) Insert(key, val []byte) {
@@ -63,4 +74,29 @@ func (db *DB) prepMemtableForKV(key, val []byte) *memtable.Memtable {
 		m = db.rotateMemtables()
 	}
 	return m
+}
+
+func (db *DB) flushMemtables() error {
+	n := len(db.memtables.queue) - 1
+	flushable := db.memtables.queue[:n]
+	db.memtables.queue = db.memtables.queue[n:]
+
+	for i := 0; i < len(flushable); i++ {
+		meta := db.dataStorage.PrepareNewFile()
+		f, err := db.dataStorage.OpenFileForWriting(meta)
+		if err != nil {
+			return err
+		}
+		w := sstable.NewWriter(f)
+		err = w.Process(flushable[i])
+		if err != nil {
+			return err
+		}
+
+		err = w.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
