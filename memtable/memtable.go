@@ -43,3 +43,7 @@ func (m *Memtable) Get(key []byte) (*encoder.EncodedValue, error) {
 	}
 	return nil, err
 }
+
+func (m *Memtable) Iterator() *skiplist.Iterator {
+	return m.sl.Iterator()
+}
