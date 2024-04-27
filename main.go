@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"lsm/cli"
-	"lsm/skiplist"
+	"lsm/db/skiplist"
 	"os"
 )
 

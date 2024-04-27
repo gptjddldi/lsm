@@ -3,7 +3,7 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"lsm/skiplist"
+	"lsm/db/skiplist"
 	"os"
 	"strings"
 )

@@ -3,13 +3,13 @@ package db
 import (
 	"errors"
 	"log"
-	"lsm/memtable"
-	"lsm/sstable"
-	"lsm/storage"
+	"lsm/db/memtable"
+	"lsm/db/sstable"
+	"lsm/db/storage"
 )
 
 const (
-	memtableSizeLimit = 4 << 10
+	memtableSizeLimit = 4 << 10 // 1MB
 )
 
 type DB struct {

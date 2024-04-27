@@ -1,12 +1,12 @@
 package memtable
 
 import (
-	"lsm/encoder"
-	"lsm/skiplist"
+	"lsm/db/encoder"
+	skiplist2 "lsm/db/skiplist"
 )
 
 type Memtable struct {
-	sl        *skiplist.SkipList
+	sl        *skiplist2.SkipList
 	sizeUsed  int
 	sizeLimit int
 	encoder   *encoder.Encoder
@@ -14,7 +14,7 @@ type Memtable struct {
 
 func NewMemtable(sizeLimit int) *Memtable {
 	m := &Memtable{
-		sl:        skiplist.NewSkipList(),
+		sl:        skiplist2.NewSkipList(),
 		sizeUsed:  0,
 		sizeLimit: sizeLimit,
 		encoder:   encoder.NewEncoder(),
@@ -44,6 +44,6 @@ func (m *Memtable) Get(key []byte) (*encoder.EncodedValue, error) {
 	return nil, err
 }
 
-func (m *Memtable) Iterator() *skiplist.Iterator {
+func (m *Memtable) Iterator() *skiplist2.Iterator {
 	return m.sl.Iterator()
 }

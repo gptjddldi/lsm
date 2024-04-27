@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"log"
-	"lsm/memtable"
+	"lsm/db/memtable"
 )
 
 type syncCloser interface {

@@ -3,7 +3,7 @@ package skiplist
 import (
 	"bytes"
 	"errors"
-	"lsm/fastrand"
+	"lsm/db/fastrand"
 	"math"
 )
 
