@@ -2,9 +2,9 @@ package sstable
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"io"
-	"log"
 	"lsm/db/memtable"
 )
 
@@ -16,7 +16,7 @@ type syncCloser interface {
 type Writer struct {
 	file syncCloser
 	bw   *bufio.Writer
-	buf  []byte
+	buf  *bytes.Buffer
 }
 
 func NewWriter(file io.Writer) *Writer {
@@ -24,7 +24,7 @@ func NewWriter(file io.Writer) *Writer {
 	w := &Writer{
 		file: file.(syncCloser),
 		bw:   bw,
-		buf:  make([]byte, 0, 1024),
+		buf:  bytes.NewBuffer(make([]byte, 0, 1024)),
 	}
 	return w
 }
@@ -46,20 +46,26 @@ func (w *Writer) Process(m *memtable.Memtable) error {
 // [keyLen:2][valLen:2][key:keyLen][encodedValue:valLen (OpType + value)]
 func (w *Writer) writeDataBlock(key, val []byte) error {
 	keyLen, valLen := len(key), len(val)
-	needed := 4 + keyLen + valLen
-	buf := w.buf[:needed]
-
-	binary.LittleEndian.PutUint16(buf[:], uint16(keyLen))
-	binary.LittleEndian.PutUint16(buf[2:], uint16(valLen))
-
-	copy(buf[4:], key)
-	copy(buf[4+keyLen:], val)
-	bytesWritten, err := w.bw.Write(buf)
+	needed := 2*binary.MaxVarintLen64 + keyLen + valLen
+	available := w.buf.Available()
+	if needed > available {
+		w.buf.Grow(needed)
+	}
+	buf := w.buf.AvailableBuffer()
+	buf = buf[:needed]
+	n := binary.PutUvarint(buf, uint64(keyLen))
+	n += binary.PutUvarint(buf[n:], uint64(valLen))
+	copy(buf[n:], key)
+	copy(buf[n+keyLen:], val)
+	used := n + keyLen + valLen
+	_, err := w.buf.Write(buf[:used])
 	if err != nil {
-		log.Fatal(err, bytesWritten)
 		return err
 	}
-
+	_, err = w.bw.ReadFrom(w.buf)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
