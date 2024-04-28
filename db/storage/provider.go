@@ -23,7 +23,7 @@ type FileMetadata struct {
 	fileType FileType
 }
 
-func (f *FileMetadata) IsSSTTable() bool {
+func (f *FileMetadata) IsSSTable() bool {
 	return f.fileType == fileTypeSSTable
 }
 

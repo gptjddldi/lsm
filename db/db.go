@@ -18,6 +18,7 @@ type DB struct {
 		mutable *memtable.Memtable
 		queue   []*memtable.Memtable // to be flushed
 	}
+	sstables []*storage.FileMetadata
 }
 
 func Open(dirname string) (*DB, error) {
@@ -29,10 +30,30 @@ func Open(dirname string) (*DB, error) {
 	db := &DB{
 		dataStorage: dataStorage,
 	}
+
+	err = db.loadSSTables()
+	if err != nil {
+		return nil, err
+	}
+
 	db.memtables.mutable = memtable.NewMemtable(memtableFlushThreshold)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	return db, nil
+}
+
+func (db *DB) loadSSTables() error {
+	meta, err := db.dataStorage.ListFiles()
+	if err != nil {
+		return err
+	}
+	for _, f := range meta {
+		if !f.IsSSTable() {
+			continue
+		}
+		db.sstables = append(db.sstables, f)
+	}
+	return nil
 }
 
 func (db *DB) Insert(key, val []byte) {
@@ -48,7 +69,6 @@ func (db *DB) rotateMemtables() *memtable.Memtable {
 }
 
 func (db *DB) Get(key []byte) ([]byte, error) {
-
 	for i := len(db.memtables.queue) - 1; i >= 0; i-- {
 		m := db.memtables.queue[i]
 		encodedValue, err := m.Get(key)
@@ -57,6 +77,24 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		} // Only NotFound error is expected
 		if encodedValue.IsTombstone() {
 			log.Printf(`Found key "%s" marked as deleted in memtable "%d".`, key, i)
+			return nil, errors.New("key not found")
+		}
+		return encodedValue.Value(), nil
+	}
+
+	for i := len(db.sstables) - 1; i >= 0; i-- {
+		meta := db.sstables[i]
+		f, err := db.dataStorage.OpenFileForReading(meta)
+		if err != nil {
+			return nil, err
+		}
+		r := sstable.NewReader(f)
+		encodedValue, err := r.Get(key)
+		if err != nil {
+			continue
+		}
+		if encodedValue.IsTombstone() {
+			log.Printf(`Found key "%s" marked as deleted in sstable "%d".`, key, i)
 			return nil, errors.New("key not found")
 		}
 		return encodedValue.Value(), nil
@@ -114,6 +152,7 @@ func (db *DB) flushMemtables() error {
 		if err != nil {
 			return err
 		}
+		db.sstables = append(db.sstables, meta)
 	}
 	return nil
 }

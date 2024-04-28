@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"lsm/db"
 )
@@ -11,5 +12,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	d.Insert([]byte("key1"), []byte("value1"))
+	//for i := 0; i < 100000; i++ {
+	//	d.Insert([]byte("key"+string(i)), []byte("value"+string(i)))
+	//}
+	val, err := d.Get([]byte("key" + string(1991)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf(string(val))
 }
