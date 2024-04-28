@@ -2,11 +2,11 @@ package memtable
 
 import (
 	"lsm/db/encoder"
-	skiplist2 "lsm/db/skiplist"
+	"lsm/db/skiplist"
 )
 
 type Memtable struct {
-	sl        *skiplist2.SkipList
+	sl        *skiplist.SkipList
 	sizeUsed  int
 	sizeLimit int
 	encoder   *encoder.Encoder
@@ -14,7 +14,7 @@ type Memtable struct {
 
 func NewMemtable(sizeLimit int) *Memtable {
 	m := &Memtable{
-		sl:        skiplist2.NewSkipList(),
+		sl:        skiplist.NewSkipList(),
 		sizeUsed:  0,
 		sizeLimit: sizeLimit,
 		encoder:   encoder.NewEncoder(),
@@ -28,22 +28,27 @@ func (m *Memtable) HasRoomForWrite(key, val []byte) bool {
 }
 
 func (m *Memtable) Insert(key, val []byte) {
-	m.sl.Insert(key, m.encoder.Encode(encoder.OpTypeSet, key, val))
+	m.sl.Insert(key, m.encoder.Encode(encoder.OpTypeSet, val))
 	m.sizeUsed += len(key) + len(val) + 1
 }
 
 func (m *Memtable) InsertTombstone(key []byte) {
-	m.sl.Insert(key, m.encoder.Encode(encoder.OpTypeDelete, key, nil))
+	m.sl.Insert(key, m.encoder.Encode(encoder.OpTypeDelete, nil))
+	m.sizeUsed += 1
 }
 
 func (m *Memtable) Get(key []byte) (*encoder.EncodedValue, error) {
 	val, err := m.sl.Find(key)
 	if err != nil {
-		return m.encoder.Decode(val), nil
+		return nil, err
 	}
-	return nil, err
+	return m.encoder.Decode(val), nil
 }
 
-func (m *Memtable) Iterator() *skiplist2.Iterator {
+func (m *Memtable) Size() int {
+	return m.sizeUsed
+}
+
+func (m *Memtable) Iterator() *skiplist.Iterator {
 	return m.sl.Iterator()
 }

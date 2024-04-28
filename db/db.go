@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	memtableSizeLimit = 4 << 10 // 1MB
+	memtableFlushThreshold = 4 << 10 // 4 * 2^10 = 4KB
 )
 
 type DB struct {
@@ -29,7 +29,7 @@ func Open(dirname string) (*DB, error) {
 	db := &DB{
 		dataStorage: dataStorage,
 	}
-	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
+	db.memtables.mutable = memtable.NewMemtable(memtableFlushThreshold)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	return db, nil
@@ -38,11 +38,12 @@ func Open(dirname string) (*DB, error) {
 func (db *DB) Insert(key, val []byte) {
 	m := db.prepMemtableForKV(key, val)
 	m.Insert(key, val)
+	db.maybeFlushMemtables()
 }
 
 func (db *DB) rotateMemtables() *memtable.Memtable {
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
+	db.memtables.mutable = memtable.NewMemtable(memtableFlushThreshold)
 	return db.memtables.mutable
 }
 
@@ -53,7 +54,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		encodedValue, err := m.Get(key)
 		if err != nil {
 			continue
-		}
+		} // Only NotFound error is expected
 		if encodedValue.IsTombstone() {
 			log.Printf(`Found key "%s" marked as deleted in memtable "%d".`, key, i)
 			return nil, errors.New("key not found")
@@ -66,6 +67,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 func (db *DB) Delete(key []byte) {
 	m := db.prepMemtableForKV(key, nil)
 	m.InsertTombstone(key)
+	db.maybeFlushMemtables()
 }
 
 func (db *DB) prepMemtableForKV(key, val []byte) *memtable.Memtable {
@@ -74,6 +76,21 @@ func (db *DB) prepMemtableForKV(key, val []byte) *memtable.Memtable {
 		m = db.rotateMemtables()
 	}
 	return m
+}
+
+func (db *DB) maybeFlushMemtables() {
+	var totalSize int
+	for i := 0; i < len(db.memtables.queue); i++ {
+		totalSize += db.memtables.queue[i].Size()
+	}
+	if totalSize < memtableFlushThreshold {
+		return
+	}
+
+	err := db.flushMemtables()
+	if err != nil {
+		log.Printf("Error flushing memtables: %v", err)
+	}
 }
 
 func (db *DB) flushMemtables() error {

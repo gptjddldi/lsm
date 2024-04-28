@@ -13,7 +13,7 @@ func NewEncoder() *Encoder {
 	return &Encoder{}
 }
 
-func (e *Encoder) Encode(op OpType, key, val []byte) []byte {
+func (e *Encoder) Encode(op OpType, val []byte) []byte {
 	n := len(val)
 	buf := make([]byte, n+1)
 	buf[0] = byte(op)

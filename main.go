@@ -1,15 +1,15 @@
 package main
 
 import (
-	"bufio"
-	"lsm/cli"
-	"lsm/db/skiplist"
-	"os"
+	"log"
+	"lsm/db"
 )
 
 func main() {
-	sl := skiplist.NewSkipList()
-	scanner := bufio.NewScanner(os.Stdin)
-	demo := cli.NewCLI(scanner, sl)
-	demo.Start()
+	const dataFolder = "demo-data"
+	d, err := db.Open(dataFolder)
+	if err != nil {
+		log.Fatal(err)
+	}
+	d.Insert([]byte("key1"), []byte("value1"))
 }

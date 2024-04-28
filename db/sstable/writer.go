@@ -20,12 +20,12 @@ type Writer struct {
 }
 
 func NewWriter(file io.Writer) *Writer {
-	w := &Writer{}
 	bw := bufio.NewWriter(file)
-
-	w.file, w.bw = file.(syncCloser), bw
-	w.buf = make([]byte, 0, 1024)
-
+	w := &Writer{
+		file: file.(syncCloser),
+		bw:   bw,
+		buf:  make([]byte, 0, 1024),
+	}
 	return w
 }
 
@@ -42,6 +42,8 @@ func (w *Writer) Process(m *memtable.Memtable) error {
 	return nil
 }
 
+// *.sst file format:
+// [keyLen:2][valLen:2][key:keyLen][encodedValue:valLen (OpType + value)]
 func (w *Writer) writeDataBlock(key, val []byte) error {
 	keyLen, valLen := len(key), len(val)
 	needed := 4 + keyLen + valLen
