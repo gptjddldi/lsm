@@ -13,6 +13,7 @@ import (
 var ErrorKeyNotFound = errors.New("key not found")
 
 const (
+	maxFileSize       = 2 * 4096
 	footerSizeInBytes = 4
 )
 
@@ -32,7 +33,7 @@ func NewReader(file io.Reader) *Reader {
 	r := &Reader{}
 	r.file, _ = file.(statCloser)
 	r.br = bufio.NewReader(file)
-	r.buf = make([]byte, 0, 1024)
+	r.buf = make([]byte, 0, maxFileSize)
 	return r
 }
 

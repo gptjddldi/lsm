@@ -114,6 +114,7 @@ func (w *Writer) writeIndexBlock() error {
 	for i, offset := range w.offsets {
 		binary.LittleEndian.PutUint32(buf[i*4:i*4+4], offset)
 	}
+	binary.LittleEndian.PutUint32(buf[needed-4:needed], uint32(numOffsets))
 	_, err := w.bw.Write(buf[:])
 	if err != nil {
 		log.Fatal(err)

@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	memtableSizeLimit      = 3 << 10
 	memtableFlushThreshold = 4 << 10 // 4 * 2^10 = 4KB
 )
 
@@ -36,7 +37,7 @@ func Open(dirname string) (*DB, error) {
 		return nil, err
 	}
 
-	db.memtables.mutable = memtable.NewMemtable(memtableFlushThreshold)
+	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	return db, nil
@@ -64,7 +65,7 @@ func (db *DB) Insert(key, val []byte) {
 
 func (db *DB) rotateMemtables() *memtable.Memtable {
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-	db.memtables.mutable = memtable.NewMemtable(memtableFlushThreshold)
+	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
 	return db.memtables.mutable
 }
 
