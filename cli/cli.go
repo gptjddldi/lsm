@@ -3,18 +3,18 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"lsm/db/skiplist"
+	"lsm/db"
 	"os"
 	"strings"
 )
 
 type CLI struct {
-	scanner  *bufio.Scanner
-	skipList *skiplist.SkipList
+	scanner *bufio.Scanner
+	db      *db.DB
 }
 
-func NewCLI(s *bufio.Scanner, sl *skiplist.SkipList) *CLI {
-	return &CLI{s, sl}
+func NewCLI(s *bufio.Scanner, b *db.DB) *CLI {
+	return &CLI{s, b}
 }
 
 func (c *CLI) Start() {
@@ -29,12 +29,12 @@ func (c *CLI) Start() {
 
 func (c *CLI) printHelp() {
 	fmt.Println(`
-SkipList CLI
+DB CLI
 
 Available Commands:
-  SET <key> <val> Insert a key-value pair into the SkipList
-  DEL <key>       Remove a key-value pair from the SkipList
-  GET <key>       Retrieve the value for key from the SkipList
+  SET <key> <val> Insert a key-value pair into the DB
+  DEL <key>       Remove a key-value pair from the DB
+  GET <key>       Retrieve the value for a key from the DB
   EXIT            Terminate this session
 `)
 }
@@ -71,8 +71,8 @@ func (c *CLI) processSetCommand(args []string) {
 		fmt.Println("Usage: SET <key> <value>")
 		return
 	}
-	c.skipList.Insert([]byte(args[0]), []byte(args[1]))
-	fmt.Println(c.skipList)
+	c.db.Insert([]byte(args[0]), []byte(args[1]))
+	fmt.Println("OK.")
 }
 
 func (c *CLI) processDeleteCommand(args []string) {
@@ -80,13 +80,8 @@ func (c *CLI) processDeleteCommand(args []string) {
 		fmt.Println("Usage: DEL <key>")
 		return
 	}
-	res := c.skipList.Delete([]byte(args[0]))
-
-	if !res {
-		fmt.Println("Key not found.")
-		return
-	}
-	fmt.Println(c.skipList)
+	c.db.Delete([]byte(args[0]))
+	fmt.Println("OK.")
 }
 
 func (c *CLI) processGetCommand(args []string) {
@@ -94,7 +89,7 @@ func (c *CLI) processGetCommand(args []string) {
 		fmt.Println("Usage: GET <key>")
 		return
 	}
-	val, err := c.skipList.Find([]byte(args[0]))
+	val, err := c.db.Get([]byte(args[0]))
 
 	if err != nil {
 		fmt.Println("Key not found.")
