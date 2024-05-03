@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	memtableSizeLimit      = 3 << 10
-	memtableFlushThreshold = 4 << 10 // 4 * 2^10 = 4KB
+	memtableSizeLimit      = 5 * 3 << 10
+	memtableFlushThreshold = 1
 )
 
 type DB struct {
@@ -89,7 +89,11 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		r := sstable.NewReader(f)
+
+		r, err := sstable.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
 		encodedValue, err := r.Get(key)
 		if err != nil {
 			continue
