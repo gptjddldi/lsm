@@ -3,8 +3,8 @@ package skiplist
 import (
 	"bytes"
 	"errors"
-	"lsm/db/fastrand"
 	"math"
+	"math/rand"
 )
 
 const (
@@ -30,7 +30,7 @@ func init() {
 }
 
 func randomHeight() int {
-	seed := fastrand.Uint32()
+	seed := rand.Uint32()
 
 	height := 1
 	for height < MaxHeight && seed <= probabilities[height] {

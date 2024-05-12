@@ -13,7 +13,7 @@ type CLI struct {
 	db      *lsm.DB
 }
 
-func NewCLI(s *bufio.Scanner, b *DB) *CLI {
+func NewCLI(s *bufio.Scanner, b *lsm.DB) *CLI {
 	return &CLI{s, b}
 }
 
