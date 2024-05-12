@@ -3,17 +3,17 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"lsm/db"
+	"github.com/gptjddldi/lsm"
 	"os"
 	"strings"
 )
 
 type CLI struct {
 	scanner *bufio.Scanner
-	db      *db.DB
+	db      *lsm.DB
 }
 
-func NewCLI(s *bufio.Scanner, b *db.DB) *CLI {
+func NewCLI(s *bufio.Scanner, b *DB) *CLI {
 	return &CLI{s, b}
 }
 

@@ -1,11 +1,9 @@
-package db
+package lsm
 
 import (
 	"errors"
+	"github.com/gptjddldi/lsm/db/storage"
 	"log"
-	"lsm/db/memtable"
-	"lsm/db/sstable"
-	"lsm/db/storage"
 )
 
 const (
@@ -16,8 +14,8 @@ const (
 type DB struct {
 	dataStorage *storage.Provider
 	memtables   struct {
-		mutable *memtable.Memtable
-		queue   []*memtable.Memtable // to be flushed
+		mutable *Memtable
+		queue   []*Memtable // to be flushed
 	}
 	sstables []*storage.FileMetadata
 }
@@ -37,7 +35,7 @@ func Open(dirname string) (*DB, error) {
 		return nil, err
 	}
 
-	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
+	db.memtables.mutable = NewMemtable(memtableSizeLimit)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	return db, nil
@@ -63,9 +61,9 @@ func (db *DB) Insert(key, val []byte) {
 	db.maybeFlushMemtables()
 }
 
-func (db *DB) rotateMemtables() *memtable.Memtable {
+func (db *DB) rotateMemtables() *Memtable {
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-	db.memtables.mutable = memtable.NewMemtable(memtableSizeLimit)
+	db.memtables.mutable = NewMemtable(memtableSizeLimit)
 	return db.memtables.mutable
 }
 
@@ -90,7 +88,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		r, err := sstable.NewReader(f)
+		r, err := NewReader(f)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +111,7 @@ func (db *DB) Delete(key []byte) {
 	db.maybeFlushMemtables()
 }
 
-func (db *DB) prepMemtableForKV(key, val []byte) *memtable.Memtable {
+func (db *DB) prepMemtableForKV(key, val []byte) *Memtable {
 	m := db.memtables.mutable
 	if !db.memtables.mutable.HasRoomForWrite(key, val) {
 		m = db.rotateMemtables()
@@ -147,17 +145,49 @@ func (db *DB) flushMemtables() error {
 		if err != nil {
 			return err
 		}
-		w := sstable.NewWriter(f)
-		err = w.Process(flushable[i])
+
+		flusher := NewFlusher(flushable[i], f)
+		err = flusher.Flush()
 		if err != nil {
 			return err
 		}
 
-		err = w.Close()
-		if err != nil {
-			return err
-		}
+		//w := sstable.NewWriter(f)
+		//err = w.Process(flushable[i])
+		//if err != nil {
+		//	return err
+		//}
+		//
+		//err = w.Close()
+		//if err != nil {
+		//	return err
+		//}
 		db.sstables = append(db.sstables, meta)
 	}
 	return nil
 }
+
+//func (db *DB) compact() error {
+//	meta1 := db.sstables[0]
+//	meta2 := db.sstables[1]
+//		f, err := db.dataStorage.OpenFileForReading(meta)
+//		if err != nil {
+//			return nil, err
+//		}
+//
+//		r, err := sstable.NewReader(f)
+//		if err != nil {
+//			return nil, err
+//		}
+//		encodedValue, err := r.Get(key)
+//		if err != nil {
+//			continue
+//		}
+//		if encodedValue.IsTombstone() {
+//			log.Printf(`Found key "%s" marked as deleted in sstable "%d".`, key, i)
+//			return nil, errors.New("key not found")
+//		}
+//		return encodedValue.Value(), nil
+//	}
+//
+//}

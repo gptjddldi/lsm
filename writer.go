@@ -1,11 +1,10 @@
-package sstable
+package lsm
 
 import (
 	"bufio"
 	"encoding/binary"
+	"github.com/gptjddldi/lsm/db/encoder"
 	"io"
-	"lsm/db/encoder"
-	"lsm/db/memtable"
 )
 
 type syncCloser interface {
@@ -37,7 +36,7 @@ func NewWriter(file io.Writer) *Writer {
 	return w
 }
 
-func (w *Writer) Process(m *memtable.Memtable) error {
+func (w *Writer) Process(m *Memtable) error {
 	i := m.Iterator()
 	for i.HasNext() {
 		key, val := i.Next()

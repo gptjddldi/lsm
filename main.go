@@ -1,14 +1,14 @@
-package main
+package lsm
 
 import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/go-faker/faker/v4"
+	"github.com/gptjddldi/lsm/cli"
 	"log"
-	"lsm/cli"
-	"lsm/db"
 	"os"
+
+	"github.com/go-faker/faker/v4"
 )
 
 const dataFolder = "demo-data"
@@ -17,20 +17,20 @@ var shouldReset, shouldSeed *bool
 var seedNumRecords *int
 
 func main() {
-	//setupFlags()
+	setupFlags()
 
-	//if *shouldReset {
-	//	eraseDataFolder()
-	//}
+	if *shouldReset {
+		eraseDataFolder()
+	}
 
-	d, err := db.Open(dataFolder)
+	d, err := Open(dataFolder)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	//if *shouldSeed {
-	//	seedDatabaseWithTestRecords(d)
-	//}
+	if *shouldSeed {
+		seedDatabaseWithTestRecords(d)
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	demo := cli.NewCLI(scanner, d)
@@ -49,13 +49,13 @@ func setupFlags() {
 }
 
 func eraseDataFolder() {
-	err := os.RemoveAll("demo")
+	err := os.RemoveAll(dataFolder)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func seedDatabaseWithTestRecords(d *db.DB) {
+func seedDatabaseWithTestRecords(d *DB) {
 	for i := 0; i < *seedNumRecords; i++ {
 		k := []byte(faker.Word() + faker.Word())
 		v := []byte(faker.Word() + faker.Word())

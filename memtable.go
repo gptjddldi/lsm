@@ -1,8 +1,8 @@
-package memtable
+package lsm
 
 import (
-	"lsm/db/encoder"
-	"lsm/db/skiplist"
+	"github.com/gptjddldi/lsm/db/encoder"
+	"github.com/gptjddldi/lsm/db/skiplist"
 )
 
 type Memtable struct {
