@@ -1,13 +1,13 @@
-package lsm
+package sstable
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/gptjddldi/lsm/db/encoder"
 	"io"
 	"io/fs"
+	"lsm/db/encoder"
 )
 
 var ErrorKeyNotFound = errors.New("key not found")
@@ -191,7 +191,3 @@ func (r *Reader) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.Enc
 	}
 	return nil, ErrorKeyNotFound
 }
-
-//func (r *Reader) Iterator() *Iterator {
-//	return newIterator(r.buf)
-//}

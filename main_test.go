@@ -2,12 +2,13 @@
 // magnamet : best for binary search
 // voluptatemqui : worst
 
-package lsm
+package main_test
 
 import (
 	"fmt"
 	"io"
 	"log"
+	"lsm/db"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func init() {
 }
 
 func BenchmarkSSTSearch(b *testing.B) {
-	d, err := Open("demo-data")
+	d, err := db.Open("demo-data")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package lsm
+package sstable
 
 import (
 	"bytes"

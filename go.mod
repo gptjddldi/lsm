@@ -1,4 +1,4 @@
-module github.com/gptjddldi/lsm
+module lsm
 
 go 1.20
 
