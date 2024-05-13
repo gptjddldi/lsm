@@ -10,7 +10,7 @@ import (
 	"lsm/db/encoder"
 )
 
-var ErrorKeyNotFound = errors.New("key not found")
+var ErrorKeyNotFound = errors.New("key not found.")
 
 const (
 	footerSizeInBytes = 8
