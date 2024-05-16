@@ -11,6 +11,11 @@ const (
 	memtableFlushThreshold = 1
 )
 
+type DataEntry struct {
+	key   []byte
+	value []byte
+}
+
 type DB struct {
 	dataStorage *storage.Provider
 	memtables   struct {
@@ -104,6 +109,29 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 	return nil, errors.New("key not found")
 }
+
+//func (db *DB) Test() error {
+//	s1 := db.sstables[0]
+//	f, err := db.dataStorage.OpenFileForReading(s1)
+//	if err != nil {
+//		return err
+//	}
+//	sstable := NewSSTable(f)
+//	it := sstable.Iterator()
+//	for {
+//		ok, err := it.Next()
+//		if err != nil {
+//			return err
+//		}
+//		if !ok {
+//			break
+//		}
+//
+//		entry := it.entry
+//		fmt.Printf("Key: %s, Value: %s\n", entry.key, entry.value)
+//	}
+//	return nil
+//}
 
 func (db *DB) Delete(key []byte) {
 	m := db.prepMemtableForKV(key, nil)

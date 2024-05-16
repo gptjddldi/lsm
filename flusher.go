@@ -24,8 +24,8 @@ func (f *Flusher) Flush() error {
 	for iterator.HasNext() {
 		key, val := iterator.Next()
 		entry := &DataEntry{
-			Key:   key,
-			Value: val,
+			key:   key,
+			value: val,
 		}
 		de = append(de, entry)
 	}

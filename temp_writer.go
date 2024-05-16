@@ -4,88 +4,141 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"github.com/gptjddldi/lsm/db/encoder"
 	"math"
 	"os"
 )
 
 const (
-	tempMaxBlockSize = 4 << 10
+	maxBlockSize      = 4 << 10
+	offsetSizeInBytes = 4
 )
 
-var tempBlockThreshold = int(math.Floor(tempMaxBlockSize * 0.9))
+var tempBlockThreshold = int(math.Floor(maxBlockSize * 0.9))
 
 type TempWriter struct {
 	buf  *bytes.Buffer
 	file *os.File
 	bw   *bufio.Writer
 
-	offsets      []uint32
+	indexLength  int
+	curOffset    int
 	nextOffset   uint32
 	writtenBytes int
-}
-type DataEntry struct {
-	Key   []byte
-	Value []byte
+
+	indexBuf *bytes.Buffer
+	lastKey  []byte
+
+	footerBuf *bytes.Buffer
+
+	encoder *encoder.Encoder
 }
 
 func NewTempWriter(file *os.File) *TempWriter {
 	return &TempWriter{
-		buf:  bytes.NewBuffer(make([]byte, 0, tempMaxBlockSize)),
-		file: file,
-		bw:   bufio.NewWriter(file),
+		buf:       bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
+		file:      file,
+		bw:        bufio.NewWriter(file),
+		indexBuf:  bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
+		footerBuf: bytes.NewBuffer(make([]byte, 0, 8)),
 	}
 }
 
-// sst 파일에 쓰는 부분
-// compaction / flush 시에 호출
-// data entry 받아서 data block / index block / meta block 생성해서 써줌
+// compaction / flush 시 호출
 func (tw *TempWriter) Write(entries []*DataEntry) error {
 	for _, entry := range entries {
-		n, err := tw.writeDataEntry(entry.Key, entry.Value)
+		key := entry.key
+		value := entry.value
+		buf := tw.buildEntry(key, value)
+		tw.growIfNeeded(len(buf), tw.buf)
+		n, err := tw.buf.Write(buf)
 		if err != nil {
 			return err
 		}
 		tw.writtenBytes += n
-
+		tw.lastKey = key
 		if tw.writtenBytes > tempBlockThreshold {
-			fmt.Println("hihihihihihihihi")
+			err := tw.flushDataBlock()
+			if err != nil {
+				return err
+			}
 		}
 	}
+	footer := tw.buildFooterBlock()
+
+	err := tw.flushDataBlock()
+	if err != nil {
+		return err
+	}
+
+	_, err = tw.bw.ReadFrom(tw.indexBuf)
+	if err != nil {
+		return err
+	}
+
+	tw.growIfNeeded(len(footer), tw.footerBuf)
+	tw.footerBuf.Write(footer)
+	_, err = tw.bw.ReadFrom(tw.footerBuf)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (tw *TempWriter) writeDataEntry(key, val []byte) (int, error) {
+// data entry or index entry
+// { key length, value length, key, (opKind, value) }
+func (tw *TempWriter) buildEntry(key, val []byte) []byte {
 	keyLen, valLen := len(key), len(val)
 	needed := 2*binary.MaxVarintLen64 + keyLen + valLen
-	buf := tw.scratchBuf(needed)
+
+	buf := make([]byte, needed)
 	n := binary.PutUvarint(buf, uint64(keyLen))
 	n += binary.PutUvarint(buf[n:], uint64(valLen))
 	copy(buf[n:], key)
 	copy(buf[n+keyLen:], val)
 	used := n + keyLen + valLen
 
-	n, err := tw.buf.Write(buf[:used])
+	return buf[:used]
+}
+
+func (tw *TempWriter) flushDataBlock() error {
+	if tw.writtenBytes <= 0 {
+		return nil
+	}
+	n, err := tw.bw.ReadFrom(tw.buf)
 	if err != nil {
-		return n, err
+		return err
 	}
 
-	tw.trackOffset(uint32(n))
-	return n, nil
-}
-
-func (tw *TempWriter) buildIndexBlock() []byte {
-	offsetLength := len(tw.offsets)
-	needed := offsetLength * 4
-	buffer := tw.scratchBuf(needed)
-	for i, offset := range tw.offsets {
-		binary.LittleEndian.PutUint32(buffer[i*4:i*4+4], offset)
-	}
-	return buffer
-}
-
-func (tw *TempWriter) buildMetaBlock() error {
+	entry := tw.buildIndexEntry()
+	tw.growIfNeeded(len(entry), tw.indexBuf)
+	tw.indexBuf.Write(entry)
+	tw.writtenBytes = 0
+	tw.curOffset += int(n)
 	return nil
+}
+
+func (tw *TempWriter) buildIndexEntry() []byte {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.curOffset))
+	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.writtenBytes))
+	tw.indexLength += 1
+	return tw.buildEntry(tw.lastKey, tw.encoder.Encode(encoder.OpTypeSet, buf))
+}
+
+func (tw *TempWriter) buildFooterBlock() []byte {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.indexBuf.Len()+8))
+	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.indexLength))
+	return buf
+}
+
+func (tw *TempWriter) growIfNeeded(needed int, buf *bytes.Buffer) {
+	available := buf.Available()
+	if needed > available {
+		buf.Grow(needed)
+	}
 }
 
 func (tw *TempWriter) scratchBuf(needed int) []byte {
@@ -96,17 +149,3 @@ func (tw *TempWriter) scratchBuf(needed int) []byte {
 	buf := tw.buf.AvailableBuffer()
 	return buf[:needed]
 }
-
-func (tw *TempWriter) trackOffset(n uint32) {
-	tw.offsets = append(tw.offsets, tw.nextOffset)
-	tw.nextOffset += n
-}
-
-//
-//func (tw *TempWriter) Write() error {
-//	_, err := tw.file.Write(tw.buf.Bytes())
-//	if err != nil {
-//		return err
-//	}
-//	return nil
-//}
