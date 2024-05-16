@@ -2,6 +2,7 @@ package lsm
 
 import (
 	"encoding/binary"
+	"github.com/gptjddldi/lsm/db/encoder"
 	"io"
 	"os"
 )
@@ -115,4 +116,20 @@ func (it *SSTableIterator) Next() (bool, error) {
 	it.entry = &DataEntry{key: key, value: value}
 
 	return true, nil
+}
+
+func (it *SSTableIterator) Close() error {
+	return it.sstable.file.Close()
+}
+
+func (it *SSTableIterator) Key() []byte {
+	return it.entry.key
+}
+
+func (it *SSTableIterator) Value() []byte {
+	return it.entry.value[1:]
+}
+
+func (it *SSTableIterator) OpType() encoder.OpType {
+	return encoder.OpType(it.entry.value[0])
 }

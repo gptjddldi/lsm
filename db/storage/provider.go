@@ -72,6 +72,7 @@ func (s *Provider) ListFiles() ([]*FileMetadata, error) {
 			fileNum:  fileNumber,
 			fileType: fileType,
 		})
+		s.nextFileNum()
 	}
 	return meta, nil
 }
