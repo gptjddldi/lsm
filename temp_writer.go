@@ -30,6 +30,7 @@ type TempWriter struct {
 	lastKey  []byte
 
 	footerBuf *bytes.Buffer
+	offsets   []uint32
 
 	encoder *encoder.Encoder
 }
@@ -64,13 +65,13 @@ func (tw *TempWriter) Write(entries []*DataEntry) error {
 			}
 		}
 	}
-	footer := tw.buildFooterBlock()
 
 	err := tw.flushDataBlock()
 	if err != nil {
 		return err
 	}
 
+	footer := tw.buildFooterBlock()
 	_, err = tw.bw.ReadFrom(tw.indexBuf)
 	if err != nil {
 		return err
@@ -113,7 +114,11 @@ func (tw *TempWriter) flushDataBlock() error {
 
 	entry := tw.buildIndexEntry()
 	tw.growIfNeeded(len(entry), tw.indexBuf)
-	tw.indexBuf.Write(entry)
+	k, err := tw.indexBuf.Write(entry)
+	if err != nil {
+		return err
+	}
+	tw.trackOffset(uint32(k))
 	tw.writtenBytes = 0
 	tw.curOffset += int(n)
 	return nil
@@ -123,14 +128,19 @@ func (tw *TempWriter) buildIndexEntry() []byte {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.curOffset))
 	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.writtenBytes))
-	tw.indexLength += 1
 	return tw.buildEntry(tw.lastKey, tw.encoder.Encode(encoder.OpTypeSet, buf))
 }
 
 func (tw *TempWriter) buildFooterBlock() []byte {
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.indexBuf.Len()+8))
-	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.indexLength))
+	offsetLength := len(tw.offsets)
+	needed := (offsetLength + 2) * 4
+	buf := make([]byte, needed)
+	for i, offset := range tw.offsets {
+		binary.LittleEndian.PutUint32(buf[i*4:i*4+4], offset)
+	}
+
+	binary.LittleEndian.PutUint32(buf[needed-8:needed-4], uint32(tw.indexBuf.Len()+needed))
+	binary.LittleEndian.PutUint32(buf[needed-4:needed], uint32(offsetLength))
 	return buf
 }
 
@@ -140,12 +150,7 @@ func (tw *TempWriter) growIfNeeded(needed int, buf *bytes.Buffer) {
 		buf.Grow(needed)
 	}
 }
-
-func (tw *TempWriter) scratchBuf(needed int) []byte {
-	available := tw.buf.Available()
-	if needed > available {
-		tw.buf.Grow(needed)
-	}
-	buf := tw.buf.AvailableBuffer()
-	return buf[:needed]
+func (tw *TempWriter) trackOffset(n uint32) {
+	tw.offsets = append(tw.offsets, tw.nextOffset)
+	tw.nextOffset += n
 }

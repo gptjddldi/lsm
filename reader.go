@@ -43,7 +43,6 @@ func NewReader(file io.Reader) (*Reader, error) {
 }
 
 func (r *Reader) Get(searchKey []byte) (*encoder.EncodedValue, error) {
-	//return r.sequentialSearch(searchKey)
 	return r.binarySearch(searchKey)
 }
 
@@ -84,7 +83,6 @@ func (r *Reader) binarySearch(searchKey []byte) (*encoder.EncodedValue, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	index, err := r.readIndexBlock(footer)
 	if err != nil {
 		return nil, err
@@ -92,12 +90,10 @@ func (r *Reader) binarySearch(searchKey []byte) (*encoder.EncodedValue, error) {
 
 	pos := index.search(searchKey)
 	indexEntry := index.readValAt(pos)
-
 	data, err := r.readDataBlock(indexEntry)
 	if err != nil {
 		return nil, err
 	}
-
 	return r.sequentialSearchBuf(data, searchKey)
 }
 
@@ -132,11 +128,11 @@ func (r *Reader) readFooter() ([]byte, error) {
 
 func (r *Reader) prepareBlockReader(buf, footer []byte) *blockReader {
 	indexLength := int(binary.LittleEndian.Uint32(footer[:4]))
-	numOffsets := int(binary.LittleEndian.Uint32(footer[4:]))
+	numOffsets := int(binary.LittleEndian.Uint32(footer[4:])) // 인덱스 갯수
 	buf = buf[:indexLength]
 	return &blockReader{
 		buf:        buf,
-		offsets:    buf[indexLength-(numOffsets+2)*4:],
+		offsets:    buf[indexLength-(numOffsets+2)*4 : indexLength-2*4],
 		numOffsets: numOffsets,
 	}
 }
@@ -191,7 +187,3 @@ func (r *Reader) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.Enc
 	}
 	return nil, ErrorKeyNotFound
 }
-
-//func (r *Reader) Iterator() *Iterator {
-//	return newIterator(r.buf)
-//}

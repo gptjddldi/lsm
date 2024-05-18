@@ -42,7 +42,7 @@ func (br *blockReader) fetchDataFor(position int) (kvOffset int, key, val []byte
 }
 
 func (br *blockReader) search(searchKey []byte) int {
-	low, high := 0, br.numOffsets
+	low, high := 0, br.numOffsets-1
 	var mid int
 	for low < high {
 		mid = (low + high) / 2
