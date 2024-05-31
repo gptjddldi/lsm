@@ -20,6 +20,8 @@ const (
 
 type FileMetadata struct {
 	fileNum  int
+	name     string
+	level    int
 	fileType FileType
 }
 
@@ -29,6 +31,14 @@ func (f *FileMetadata) IsSSTable() bool {
 
 func (f *FileMetadata) FileNum() int {
 	return f.fileNum
+}
+
+func (f *FileMetadata) Level() int {
+	return f.level
+}
+
+func (f *FileMetadata) Name() string {
+	return f.name
 }
 
 func NewProvider(dataDir string) (*Provider, error) {
@@ -49,6 +59,7 @@ func (s *Provider) ensureDataDirExists() error {
 	return nil
 }
 
+// directory + "/" + level (single digit) + _ + file number (6 digits) + .sst
 func (s *Provider) ListFiles() ([]*FileMetadata, error) {
 	files, err := os.ReadDir(s.dataDir)
 	if err != nil {
@@ -56,21 +67,22 @@ func (s *Provider) ListFiles() ([]*FileMetadata, error) {
 	}
 	var meta []*FileMetadata
 	var fileNumber int
+	var fileLevel int
 	var fileExtension string
 
 	for _, f := range files {
-		_, err = fmt.Sscanf(f.Name(), "%06d.%s", &fileNumber, &fileExtension)
+		_, err = fmt.Sscanf(f.Name(), "%1d_%06d.%s", &fileLevel, &fileNumber, &fileExtension)
 		if err != nil {
 			return nil, err
 		}
-
-		fileType := FileTypeUnknown
-		if fileExtension == "sst" {
-			fileType = fileTypeSSTable
+		if fileExtension != "sst" {
+			continue
 		}
 		meta = append(meta, &FileMetadata{
 			fileNum:  fileNumber,
-			fileType: fileType,
+			level:    fileLevel,
+			fileType: fileTypeSSTable,
+			name:     f.Name(),
 		})
 		s.nextFileNum()
 	}

@@ -2,18 +2,27 @@ package lsm
 
 import (
 	"errors"
+	"github.com/gptjddldi/lsm/db/encoder"
 	"github.com/gptjddldi/lsm/db/storage"
 	"log"
+	"os"
 )
 
 const (
 	memtableSizeLimit      = 5 * 3 << 10
 	memtableFlushThreshold = 1
+	maxLevel               = 6
 )
+
+var ErrorKeyNotFound = errors.New("key not found")
 
 type DataEntry struct {
 	key   []byte
 	value []byte
+}
+
+type level struct {
+	sstables []*SSTable // SSTables in this level
 }
 
 type DB struct {
@@ -22,7 +31,7 @@ type DB struct {
 		mutable *Memtable
 		queue   []*Memtable // to be flushed
 	}
-	sstables []*storage.FileMetadata
+	levels []*level
 }
 
 func Open(dirname string) (*DB, error) {
@@ -35,30 +44,36 @@ func Open(dirname string) (*DB, error) {
 		dataStorage: dataStorage,
 	}
 
-	err = db.loadSSTables()
+	levels := make([]*level, maxLevel)
+	for i := 0; i < maxLevel; i++ {
+		levels[i] = &level{
+			sstables: make([]*SSTable, 0),
+		}
+	}
+	err = db.loadSSTFilesFromDisk()
 	if err != nil {
 		return nil, err
 	}
-
+	db.levels = levels
 	db.memtables.mutable = NewMemtable(memtableSizeLimit)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	return db, nil
 }
 
-func (db *DB) loadSSTables() error {
-	meta, err := db.dataStorage.ListFiles()
-	if err != nil {
-		return err
-	}
-	for _, f := range meta {
-		if !f.IsSSTable() {
-			continue
-		}
-		db.sstables = append(db.sstables, f)
-	}
-	return nil
-}
+//func (db *DB) loadSSTables() error {
+//	meta, err := db.dataStorage.ListFiles()
+//	if err != nil {
+//		return err
+//	}
+//	for _, f := range meta {
+//		if !f.IsSSTable() {
+//			continue
+//		}
+//		db.sstables = append(db.sstables, f)
+//	}
+//	return nil
+//}
 
 func (db *DB) Insert(key, val []byte) {
 	m := db.prepMemtableForKV(key, val)
@@ -79,36 +94,52 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		if err != nil {
 			continue
 		} // Only NotFound error is expected
-		if encodedValue.IsTombstone() {
-			log.Printf(`Found key "%s" marked as deleted in memtable "%d".`, key, i)
-			return nil, errors.New("key not found")
-		}
-		return encodedValue.Value(), nil
+		return db.handleEncodedValue(encodedValue)
 	}
-
-	for i := len(db.sstables) - 1; i >= 0; i-- {
-		meta := db.sstables[i]
-		f, err := db.dataStorage.OpenFileForReading(meta)
-		if err != nil {
-			return nil, err
+	for level := range db.levels {
+		for i := len(db.levels[level].sstables) - 1; i >= 0; i-- {
+			encodedValue, err := db.levels[level].sstables[i].Get(key)
+			if err != nil {
+				continue // Only NotFound error is expected
+			}
+			return db.handleEncodedValue(encodedValue)
 		}
-
-		r, err := NewReader(f)
-		if err != nil {
-			return nil, err
-		}
-		encodedValue, err := r.Get(key)
-		if err != nil {
-			continue
-		}
-		if encodedValue.IsTombstone() {
-			log.Printf(`Found key "%s" marked as deleted in sstable "%d".`, key, i)
-			return nil, errors.New("key not found")
-		}
-		return encodedValue.Value(), nil
 	}
 	return nil, errors.New("key not found")
 }
+
+func (db *DB) handleEncodedValue(encodedValue *encoder.EncodedValue) ([]byte, error) {
+	if encodedValue.IsTombstone() {
+		return nil, errors.New("key not found")
+	}
+	return encodedValue.Value(), nil
+}
+
+//func (db *DB) Test() error {
+//	s1 := db.sstables[1]
+//	f, err := db.dataStorage.OpenFileForReading(s1)
+//	if err != nil {
+//		return err
+//	}
+//	sstable := NewSSTable(f)
+//	iter1 := sstable.Iterator()
+//
+//	s2 := db.sstables[2]
+//	f, err = db.dataStorage.OpenFileForReading(s2)
+//	if err != nil {
+//		return err
+//	}
+//	sstable = NewSSTable(f)
+//	iter2 := sstable.Iterator()
+//	iterators := []*SSTableIterator{iter1, iter2}
+//	meta := db.dataStorage.PrepareNewFile()
+//	f, err = db.dataStorage.OpenFileForWriting(meta)
+//	if err != nil {
+//		return err
+//	}
+//
+//	return mergeFiles(iterators, f)
+//}
 
 //func (db *DB) Test() error {
 //	s1 := db.sstables[0]
@@ -179,43 +210,35 @@ func (db *DB) flushMemtables() error {
 		if err != nil {
 			return err
 		}
-
-		//w := sstable.NewWriter(f)
-		//err = w.Process(flushable[i])
-		//if err != nil {
-		//	return err
-		//}
-		//
-		//err = w.Close()
-		//if err != nil {
-		//	return err
-		//}
-		db.sstables = append(db.sstables, meta)
+		sst, err := OpenSSTable(f.Name())
+		db.levels[0].sstables = append(db.levels[0].sstables, sst)
 	}
 	return nil
 }
 
-//func (db *DB) compact() error {
-//	meta1 := db.sstables[0]
-//	meta2 := db.sstables[1]
-//		f, err := db.dataStorage.OpenFileForReading(meta)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		r, err := sstable.NewReader(f)
-//		if err != nil {
-//			return nil, err
-//		}
-//		encodedValue, err := r.Get(key)
-//		if err != nil {
-//			continue
-//		}
-//		if encodedValue.IsTombstone() {
-//			log.Printf(`Found key "%s" marked as deleted in sstable "%d".`, key, i)
-//			return nil, errors.New("key not found")
-//		}
-//		return encodedValue.Value(), nil
-//	}
-//
-//}
+func (db *DB) loadSSTFilesFromDisk() error {
+	files, err := db.dataStorage.ListFiles()
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if !f.IsSSTable() {
+			continue
+		}
+		sst, err := OpenSSTable(f.Name())
+		if err != nil {
+			return err
+		}
+		db.levels[f.Level()].sstables = append(db.levels[f.Level()].sstables, sst)
+	}
+	return nil
+}
+
+func OpenSSTable(filename string) (*SSTable, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	sst := NewSSTable(file)
+	return sst, nil
+}

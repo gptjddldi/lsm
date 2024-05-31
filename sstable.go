@@ -1,6 +1,8 @@
 package lsm
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
 	"github.com/gptjddldi/lsm/db/encoder"
 	"io"
@@ -8,22 +10,31 @@ import (
 )
 
 type SSTable struct {
-	//index []byte
-	// todo: bloom filter, index
-	file *os.File
+	index *Index
+	// todo: bloom filter
+	encoder *encoder.Encoder
+	file    *os.File
 }
+
 type SSTableIterator struct {
 	sstable    *SSTable
-	reader     *Reader
+	reader     *bufio.Reader
 	entry      *DataEntry
 	curOffset  int
 	stopOffset int
 }
 
 func NewSSTable(file *os.File) *SSTable {
-	return &SSTable{
-		file: file,
+	sst := &SSTable{
+		file:    file,
+		encoder: encoder.NewEncoder(),
 	}
+	index, err := sst.readIndex()
+	if err != nil {
+		return nil
+	}
+	sst.index = index
+	return sst
 }
 
 func (s *SSTable) readFooter() ([]byte, error) {
@@ -40,22 +51,104 @@ func (s *SSTable) readFooter() ([]byte, error) {
 	return footer, nil
 }
 
-func (s *SSTable) indexOffset() (int, error) {
+func (s *SSTable) indexLength() (int, error) {
 	footer, err := s.readFooter()
 	if err != nil {
 		return 0, err
 	}
-	indexLength := binary.LittleEndian.Uint32(footer[:4])
+	return int(binary.LittleEndian.Uint32(footer[:4]) - 8), nil
+}
 
+func (s *SSTable) indexOffset() (int, error) {
+	indexLength, err := s.indexLength()
+	if err != nil {
+		return 0, err
+	}
 	fileSize, err := s.file.Stat()
 	if err != nil {
 		return 0, err
 	}
-	return int(fileSize.Size()) - int(indexLength) - 8, nil
+	return int(fileSize.Size()) - indexLength - 8, nil
 }
 
-func (s *SSTable) Get(key []byte) ([]byte, error) {
-	return nil, nil
+func (s *SSTable) readIndex() (*Index, error) {
+	indexLength, err := s.indexLength()
+	if err != nil {
+		return nil, err
+	}
+	indexOffset, err := s.indexOffset()
+	if err != nil {
+		return nil, err
+	}
+	index := make([]byte, indexLength)
+	_, err = s.file.ReadAt(index, int64(indexOffset))
+	if err != nil {
+		return nil, err
+	}
+	return NewIndex(index), nil
+}
+
+func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
+	ie := s.index.Get(searchKey)
+
+	offset := binary.LittleEndian.Uint32(ie.value[:4])
+	length := binary.LittleEndian.Uint32(ie.value[4:8])
+
+	block, err := s.readBlockAt(offset, length)
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := s.sequentialSearchBuf(block, searchKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func (s *SSTable) readBlockAt(offset, length uint32) ([]byte, error) {
+	// Seek to the offset
+	_, err := s.file.Seek(int64(offset), io.SeekStart)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read the block
+	block := make([]byte, length)
+	_, err = s.file.Read(block)
+	if err != nil {
+		return nil, err
+	}
+
+	return block, nil
+}
+
+func (s *SSTable) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.EncodedValue, error) {
+	var offset int
+	for {
+		var keyLen, valLen uint64
+		var n int
+		keyLen, n = binary.Uvarint(buf[offset:])
+		if n <= 0 {
+			break
+		}
+		offset += n
+		valLen, n = binary.Uvarint(buf[offset:])
+		offset += n
+		key := buf[offset : offset+int(keyLen)]
+		offset += int(keyLen)
+		val := buf[offset : offset+int(valLen)]
+		offset += int(valLen)
+		cmp := bytes.Compare(searchKey, key)
+		if cmp == 0 {
+			return s.encoder.Decode(val), nil
+		}
+		if cmp < 0 {
+			break
+		}
+	}
+	return nil, ErrorKeyNotFound
 }
 
 func (s *SSTable) PUT(key, val []byte) error {
@@ -63,10 +156,7 @@ func (s *SSTable) PUT(key, val []byte) error {
 }
 
 func (s *SSTable) Iterator() *SSTableIterator {
-	reader, err := NewReader(s.file)
-	if err != nil {
-		return nil
-	}
+	reader := bufio.NewReader(s.file)
 	indexOffset, err := s.indexOffset()
 	if err != nil {
 		return nil
@@ -85,13 +175,13 @@ func (it *SSTableIterator) Next() (bool, error) {
 	}
 	startPosition := it.curOffset
 
-	keyLen, err := binary.ReadUvarint(it.reader.br)
+	keyLen, err := binary.ReadUvarint(it.reader)
 	if err != nil {
 		return false, err
 	}
 	it.curOffset += binary.PutUvarint(make([]byte, 10), keyLen)
 
-	valLen, err := binary.ReadUvarint(it.reader.br)
+	valLen, err := binary.ReadUvarint(it.reader)
 	if err != nil {
 		return false, err
 	}
@@ -103,13 +193,13 @@ func (it *SSTableIterator) Next() (bool, error) {
 	}
 
 	key := make([]byte, keyLen)
-	if _, err := io.ReadFull(it.reader.br, key); err != nil {
+	if _, err := io.ReadFull(it.reader, key); err != nil {
 		return false, err
 	}
 	it.curOffset += int(keyLen)
 
 	value := make([]byte, valLen)
-	if _, err := io.ReadFull(it.reader.br, value); err != nil {
+	if _, err := io.ReadFull(it.reader, value); err != nil {
 		return false, err
 	}
 	it.curOffset += int(valLen)

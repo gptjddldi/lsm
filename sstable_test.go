@@ -9,25 +9,25 @@ import (
 	"testing"
 )
 
-func TestReader_Get(t *testing.T) {
-	err := generateSSTable()
+func TestSstable_Get(t *testing.T) {
+	err := generateSSTable2()
 	if err != nil {
 		t.Fatal(err)
 	}
 	f, err := os.OpenFile(filepath.Join("./test", "000001.sst"), os.O_RDONLY, 0644)
 
-	reader, err := NewReader(f)
-	value, err := reader.Get([]byte("testKey27"))
+	sst := NewSSTable(f)
+	value, err := sst.Get([]byte("testKey27"))
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("testValue27"), value.Value())
 
-	value, err = reader.Get([]byte("testKey270"))
+	value, err = sst.Get([]byte("testKey270"))
 	assert.EqualError(t, err, "key not found")
 
 	os.Remove(f.Name())
 }
 
-func generateSSTable() error {
+func generateSSTable2() error {
 	memtable := NewMemtable(1024)
 	i := 0
 	for memtable.Size() < 1024 {
