@@ -1,6 +1,7 @@
 package lsm
 
 import (
+	"context"
 	"errors"
 	"github.com/gptjddldi/lsm/db/encoder"
 	"github.com/gptjddldi/lsm/db/storage"
@@ -13,6 +14,16 @@ const (
 	memtableFlushThreshold = 1
 	maxLevel               = 6
 )
+
+var maxLevelSSTables = map[int]int{
+	0: 4,
+	1: 8,
+	2: 16,
+	3: 32,
+	4: 64,
+	5: 128,
+	6: 256,
+}
 
 var ErrorKeyNotFound = errors.New("key not found")
 
@@ -32,16 +43,26 @@ type DB struct {
 		queue   []*Memtable // to be flushed
 	}
 	levels []*level
+
+	compactionChan chan int
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func Open(dirname string) (*DB, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	dataStorage, err := storage.NewProvider(dirname)
 	if err != nil {
 		return nil, err
 	}
 
 	db := &DB{
-		dataStorage: dataStorage,
+		dataStorage:    dataStorage,
+		compactionChan: make(chan int, 100),
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 
 	levels := make([]*level, maxLevel)
@@ -58,7 +79,33 @@ func Open(dirname string) (*DB, error) {
 	db.memtables.mutable = NewMemtable(memtableSizeLimit)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
+	go db.doCompaction()
+
 	return db, nil
+}
+
+func (db *DB) doCompaction() {
+	for {
+		select {
+		case <-db.ctx.Done():
+			if readyToExit := db.checkAndTriggerCompaction(); readyToExit {
+				return
+			}
+		case <-db.compactionChan:
+			db.compactLevel(0)
+		}
+	}
+}
+
+func (db *DB) checkAndTriggerCompaction() bool {
+	readyToExit := true
+	for idx, level := range db.levels {
+		if len(level.sstables) > maxLevelSSTables[idx] {
+			db.compactionChan <- idx
+			readyToExit = false
+		}
+	}
+	return readyToExit
 }
 
 //func (db *DB) loadSSTables() error {
