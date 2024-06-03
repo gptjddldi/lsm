@@ -3,15 +3,16 @@ package lsm
 import (
 	"context"
 	"errors"
+	"os"
+	"sync"
+
 	"github.com/gptjddldi/lsm/db/encoder"
 	"github.com/gptjddldi/lsm/db/storage"
-	"log"
-	"os"
 )
 
 const (
-	memtableSizeLimit      = 5 * 3 << 10
-	memtableFlushThreshold = 1
+	memtableSizeLimitBytes = 2 << 20 // 2MB
+	memtableFlushThreshold = 5 << 20
 	maxLevel               = 6
 )
 
@@ -42,25 +43,29 @@ type DB struct {
 		mutable *Memtable
 		queue   []*Memtable // to be flushed
 	}
-	levels []*level
+	flushingChan chan *Memtable
+	levels       []*level
 
 	compactionChan chan int
 
+	wg     sync.WaitGroup
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 func Open(dirname string) (*DB, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
 	dataStorage, err := storage.NewProvider(dirname)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	db := &DB{
 		dataStorage:    dataStorage,
 		compactionChan: make(chan int, 100),
+		flushingChan:   make(chan *Memtable, 100),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -76,15 +81,18 @@ func Open(dirname string) (*DB, error) {
 		return nil, err
 	}
 	db.levels = levels
-	db.memtables.mutable = NewMemtable(memtableSizeLimit)
+	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
+	db.wg.Add(2)
 	go db.doCompaction()
+	go db.doFlushing()
 
 	return db, nil
 }
 
 func (db *DB) doCompaction() {
+	defer db.wg.Done()
 	for {
 		select {
 		case <-db.ctx.Done():
@@ -108,16 +116,21 @@ func (db *DB) checkAndTriggerCompaction() bool {
 	return readyToExit
 }
 
-func (db *DB) Insert(key, val []byte) {
-	m := db.prepMemtableForKV(key, val)
-	m.Insert(key, val)
-	db.maybeFlushMemtables()
+func (db *DB) doFlushing() {
+	defer db.wg.Done()
+	for {
+		select {
+		case <-db.ctx.Done():
+			return
+		case m := <-db.flushingChan:
+			db.flushMemtable(m)
+		}
+	}
 }
 
-func (db *DB) rotateMemtables() *Memtable {
-	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-	db.memtables.mutable = NewMemtable(memtableSizeLimit)
-	return db.memtables.mutable
+func (db *DB) Insert(key, val []byte) {
+	db.prepMemtableForKV(key, val)
+	db.memtables.mutable.Insert(key, val)
 }
 
 func (db *DB) Get(key []byte) ([]byte, error) {
@@ -149,54 +162,35 @@ func (db *DB) handleEncodedValue(encodedValue *encoder.EncodedValue) ([]byte, er
 }
 
 func (db *DB) Delete(key []byte) {
-	m := db.prepMemtableForKV(key, nil)
-	m.InsertTombstone(key)
-	db.maybeFlushMemtables()
+	db.prepMemtableForKV(key, nil)
+	db.memtables.mutable.InsertTombstone(key)
 }
 
-func (db *DB) prepMemtableForKV(key, val []byte) *Memtable {
-	m := db.memtables.mutable
+func (db *DB) prepMemtableForKV(key, val []byte) {
 	if !db.memtables.mutable.HasRoomForWrite(key, val) {
-		m = db.rotateMemtables()
+		db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
+		db.flushingChan <- db.memtables.mutable
+		m := NewMemtable(memtableSizeLimitBytes)
+		db.memtables.mutable = m
 	}
-	return m
 }
 
-func (db *DB) maybeFlushMemtables() {
-	var totalSize int
-	for i := 0; i < len(db.memtables.queue); i++ {
-		totalSize += db.memtables.queue[i].Size()
-	}
-	if totalSize < memtableFlushThreshold {
-		return
-	}
-
-	err := db.flushMemtables()
+func (db *DB) flushMemtable(m *Memtable) error {
+	meta := db.dataStorage.PrepareNewFile()
+	f, err := db.dataStorage.OpenFileForWriting(meta)
 	if err != nil {
-		log.Printf("Error flushing memtables: %v", err)
+		return err
 	}
-}
 
-func (db *DB) flushMemtables() error {
-	n := len(db.memtables.queue) - 1
-	flushable := db.memtables.queue[:n]
-	db.memtables.queue = db.memtables.queue[n:]
-
-	for i := 0; i < len(flushable); i++ {
-		meta := db.dataStorage.PrepareNewFile()
-		f, err := db.dataStorage.OpenFileForWriting(meta)
-		if err != nil {
-			return err
-		}
-
-		flusher := NewFlusher(flushable[i], f)
-		err = flusher.Flush()
-		if err != nil {
-			return err
-		}
-		sst, err := OpenSSTable(f.Name())
-		db.levels[0].sstables = append(db.levels[0].sstables, sst)
+	flusher := NewFlusher(m, f)
+	err = flusher.Flush()
+	if err != nil {
+		return err
 	}
+	sst, err := OpenSSTable(f.Name())
+	db.levels[0].sstables = append(db.levels[0].sstables, sst)
+	db.memtables.queue = db.memtables.queue[1:]
+
 	return nil
 }
 
