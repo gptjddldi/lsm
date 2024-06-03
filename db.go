@@ -108,20 +108,6 @@ func (db *DB) checkAndTriggerCompaction() bool {
 	return readyToExit
 }
 
-//func (db *DB) loadSSTables() error {
-//	meta, err := db.dataStorage.ListFiles()
-//	if err != nil {
-//		return err
-//	}
-//	for _, f := range meta {
-//		if !f.IsSSTable() {
-//			continue
-//		}
-//		db.sstables = append(db.sstables, f)
-//	}
-//	return nil
-//}
-
 func (db *DB) Insert(key, val []byte) {
 	m := db.prepMemtableForKV(key, val)
 	m.Insert(key, val)
@@ -161,55 +147,6 @@ func (db *DB) handleEncodedValue(encodedValue *encoder.EncodedValue) ([]byte, er
 	}
 	return encodedValue.Value(), nil
 }
-
-//func (db *DB) Test() error {
-//	s1 := db.sstables[1]
-//	f, err := db.dataStorage.OpenFileForReading(s1)
-//	if err != nil {
-//		return err
-//	}
-//	sstable := NewSSTable(f)
-//	iter1 := sstable.Iterator()
-//
-//	s2 := db.sstables[2]
-//	f, err = db.dataStorage.OpenFileForReading(s2)
-//	if err != nil {
-//		return err
-//	}
-//	sstable = NewSSTable(f)
-//	iter2 := sstable.Iterator()
-//	iterators := []*SSTableIterator{iter1, iter2}
-//	meta := db.dataStorage.PrepareNewFile()
-//	f, err = db.dataStorage.OpenFileForWriting(meta)
-//	if err != nil {
-//		return err
-//	}
-//
-//	return mergeFiles(iterators, f)
-//}
-
-//func (db *DB) Test() error {
-//	s1 := db.sstables[0]
-//	f, err := db.dataStorage.OpenFileForReading(s1)
-//	if err != nil {
-//		return err
-//	}
-//	sstable := NewSSTable(f)
-//	it := sstable.Iterator()
-//	for {
-//		ok, err := it.Next()
-//		if err != nil {
-//			return err
-//		}
-//		if !ok {
-//			break
-//		}
-//
-//		entry := it.entry
-//		fmt.Printf("Key: %s, Value: %s\n", entry.key, entry.value)
-//	}
-//	return nil
-//}
 
 func (db *DB) Delete(key []byte) {
 	m := db.prepMemtableForKV(key, nil)
