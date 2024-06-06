@@ -1,14 +1,18 @@
 package lsm
 
 func (db *DB) compactLevel(level int) error {
-	if level == 0 {
+	if level == 0 && db.checkL0Compaction() {
 		err := db.compactLevel0()
 		if err != nil {
 			return err
 		}
-
+	} else if level > 0 && db.checkLevelNCompaction(level) {
+		err := db.compactLevelN(level)
+		if err != nil {
+			return err
+		}
 	}
-	return db.compactLevelN(level)
+	return nil
 }
 
 func (db *DB) compactLevel0() error {
@@ -30,7 +34,7 @@ func (db *DB) compactLevel0() error {
 	db.deleteSStableAtLevel(1, iterators1)
 	db.levels[1].sstables = append(db.levels[1].sstables, sstList...)
 
-	//todo: db.compactionChan <- 1
+	db.compactionChan <- 1
 
 	return nil
 }

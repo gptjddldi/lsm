@@ -93,7 +93,7 @@ func (db *DB) doCompaction() {
 	for {
 		select {
 		case <-db.ctx.Done():
-			if readyToExit := db.checkAndTriggerCompaction(); readyToExit {
+			if readyToExit := db.triggerCompaction(); readyToExit {
 				return
 			}
 		case l := <-db.compactionChan:
@@ -101,20 +101,47 @@ func (db *DB) doCompaction() {
 		}
 	}
 }
-
-// db close 시 컴팩션 필요한지 확인, 필요하면 종료 전에 컴팩션 수행
-func (db *DB) checkAndTriggerCompaction() bool {
+func (db *DB) triggerCompaction() bool {
 	readyToExit := true
-	for idx, level := range db.levels {
-		if idx == 0 && len(level.sstables) > l0Capacity {
+
+	if !db.checkL0Compaction() {
+		readyToExit = false
+	}
+
+	if !db.checkLevelNCompactions() {
+		readyToExit = false
+	}
+
+	return readyToExit
+}
+
+func (db *DB) checkL0Compaction() bool {
+	if len(db.levels[0].sstables) > l0Capacity {
+		db.compactionChan <- 0
+		return false
+	}
+	return true
+}
+
+func (db *DB) checkLevelNCompactions() bool {
+	for idx, _ := range db.levels {
+		if idx == 0 {
+			continue
+		}
+		if db.checkLevelNCompaction(idx) {
 			db.compactionChan <- idx
-			readyToExit = false
-		} else if idx > 0 && len(level.sstables) > calculateLevelSize(idx) {
-			db.compactionChan <- idx
-			readyToExit = false
+			return false
 		}
 	}
-	return readyToExit
+	return true
+}
+
+func (db *DB) checkLevelNCompaction(level int) bool {
+	if len(db.levels[level].sstables) > calculateLevelSize(level) {
+		db.compactionChan <- level
+		return false
+	}
+	return true
 }
 
 func (db *DB) doFlushing() {
