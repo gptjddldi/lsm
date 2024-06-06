@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"github.com/gptjddldi/lsm/db/encoder"
 	"math"
 	"os"
@@ -145,6 +146,7 @@ func (tw *TempWriter) buildFooterBlock() []byte {
 }
 
 func (tw *TempWriter) growIfNeeded(needed int, buf *bytes.Buffer) {
+	fmt.Println("Test")
 	available := buf.Available()
 	if needed > available {
 		buf.Grow(needed)
