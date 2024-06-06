@@ -22,7 +22,7 @@ func TestFlusher_Flush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	meta := provider.PrepareNewFile()
+	meta := provider.PrepareNewFile(0)
 	f, err := provider.OpenFileForWriting(meta)
 	if err != nil {
 		t.Fatal(err)

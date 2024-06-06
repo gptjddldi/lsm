@@ -14,7 +14,7 @@ func TestSstable_Get(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.OpenFile(filepath.Join("./test", "000001.sst"), os.O_RDONLY, 0644)
+	f, err := os.OpenFile(filepath.Join("./test", "0_000001.sst"), os.O_RDONLY, 0644)
 
 	sst := NewSSTable(f)
 	value, err := sst.Get([]byte("testKey27"))
@@ -41,7 +41,7 @@ func generateSSTable2() error {
 	if err != nil {
 		return err
 	}
-	meta := provider.PrepareNewFile()
+	meta := provider.PrepareNewFile(0)
 	f, err := provider.OpenFileForWriting(meta)
 	if err != nil {
 		return err

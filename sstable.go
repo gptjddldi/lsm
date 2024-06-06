@@ -217,7 +217,7 @@ func (it *SSTableIterator) Key() []byte {
 }
 
 func (it *SSTableIterator) Value() []byte {
-	return it.entry.value[1:]
+	return it.entry.value
 }
 
 func (it *SSTableIterator) OpType() encoder.OpType {
