@@ -43,7 +43,7 @@ func (f *FileMetadata) Name() string {
 
 func NewProvider(dataDir string) (*Provider, error) {
 	s := &Provider{dataDir: dataDir}
-
+	fmt.Println("Test")
 	err := s.ensureDataDirExists()
 	if err != nil {
 		return nil, err
