@@ -26,6 +26,9 @@ jobs:
           git config --global user.name 'gptjddldi'
           git config --global user.email 'hystom38@gmail.com'
 
+      - name: Fetch all branches
+        run: git fetch --all
+
       - name: Checkout master branch
         run: git checkout master
 
