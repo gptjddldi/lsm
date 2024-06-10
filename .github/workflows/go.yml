@@ -20,3 +20,22 @@ jobs:
 
       - name: Test
         run: go test -v .
+
+      - name: Configure git
+        run: |
+          git config --global user.name 'gptjddldi'
+          git config --global user.email 'hystom38@gmail.com'
+
+      - name: Fetch all branches
+        run: git fetch --all
+
+      - name: Checkout master branch
+        run: git checkout master
+
+      - name: Merge PR branch
+        run: git merge ${{ github.event.pull_request.head.ref }}
+
+      - name: Push changes
+        run: git push origin master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
