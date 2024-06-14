@@ -12,8 +12,7 @@ import (
 type SSTable struct {
 	index *Index
 	// todo: bloom filter
-	encoder *encoder.Encoder
-	file    *os.File
+	file *os.File
 }
 
 type SSTableIterator struct {
@@ -26,8 +25,7 @@ type SSTableIterator struct {
 
 func NewSSTable(file *os.File) *SSTable {
 	sst := &SSTable{
-		file:    file,
-		encoder: encoder.NewEncoder(),
+		file: file,
 	}
 	index, err := sst.readIndex()
 	if err != nil {
@@ -142,7 +140,7 @@ func (s *SSTable) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.En
 		offset += int(valLen)
 		cmp := bytes.Compare(searchKey, key)
 		if cmp == 0 {
-			return s.encoder.Decode(val), nil
+			return encoder.Decode(val), nil
 		}
 		if cmp < 0 {
 			break

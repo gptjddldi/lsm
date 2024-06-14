@@ -31,8 +31,6 @@ type TempWriter struct {
 
 	footerBuf *bytes.Buffer
 	offsets   []uint32
-
-	encoder *encoder.Encoder
 }
 
 func NewTempWriter(file *os.File) *TempWriter {
@@ -128,7 +126,7 @@ func (tw *TempWriter) buildIndexEntry() []byte {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.curOffset))
 	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.writtenBytes))
-	return tw.buildEntry(tw.lastKey, tw.encoder.Encode(encoder.OpTypeSet, buf))
+	return tw.buildEntry(tw.lastKey, encoder.Encode(encoder.OpTypeSet, buf))
 }
 
 func (tw *TempWriter) buildFooterBlock() []byte {

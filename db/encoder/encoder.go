@@ -9,11 +9,7 @@ const (
 
 type Encoder struct{}
 
-func NewEncoder() *Encoder {
-	return &Encoder{}
-}
-
-func (e *Encoder) Encode(op OpType, val []byte) []byte {
+func Encode(op OpType, val []byte) []byte {
 	n := len(val)
 	buf := make([]byte, n+1)
 	buf[0] = byte(op)
@@ -21,7 +17,7 @@ func (e *Encoder) Encode(op OpType, val []byte) []byte {
 	return buf
 }
 
-func (e *Encoder) Decode(buf []byte) *EncodedValue {
+func Decode(buf []byte) *EncodedValue {
 	return &EncodedValue{
 		val:    buf[1:],
 		OpType: OpType(buf[0]),
