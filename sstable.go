@@ -201,7 +201,7 @@ func (it *SSTableIterator) Next() (bool, error) {
 		return false, err
 	}
 	it.curOffset += int(valLen)
-	it.entry = &DataEntry{key: key, value: value}
+	it.entry = &DataEntry{key: key, value: value[1:], opType: encoder.OpType(value[0])}
 
 	return true, nil
 }

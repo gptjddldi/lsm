@@ -1,6 +1,7 @@
 package lsm
 
 import (
+	"github.com/gptjddldi/lsm/db/encoder"
 	"os"
 )
 
@@ -24,8 +25,9 @@ func (f *Flusher) Flush() error {
 	for iterator.HasNext() {
 		key, val := iterator.Next()
 		entry := &DataEntry{
-			key:   key,
-			value: val,
+			key:    key,
+			value:  val[1:],
+			opType: encoder.OpType(val[0]),
 		}
 		de = append(de, entry)
 	}

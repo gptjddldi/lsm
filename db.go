@@ -29,8 +29,9 @@ var maxLevelSSTables = map[int]int{
 var ErrorKeyNotFound = errors.New("key not found")
 
 type DataEntry struct {
-	key   []byte
-	value []byte
+	key    []byte
+	value  []byte
+	opType encoder.OpType
 }
 
 type level struct {

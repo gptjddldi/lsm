@@ -67,8 +67,9 @@ func mergeFiles(iterators []*SSTableIterator, file *os.File) error {
 
 		if item.opType != encoder.OpTypeDelete {
 			de = append(de, &DataEntry{
-				key:   item.key,
-				value: item.value,
+				key:    item.key,
+				value:  item.value,
+				opType: item.opType,
 			})
 		}
 

@@ -46,16 +46,14 @@ func NewTempWriter(file *os.File) *TempWriter {
 // compaction / flush 시 호출
 func (tw *TempWriter) Write(entries []*DataEntry) error {
 	for _, entry := range entries {
-		key := entry.key
-		value := entry.value
-		buf := tw.buildEntry(key, value)
+		buf := tw.buildEntry(entry)
 		tw.growIfNeeded(len(buf), tw.buf)
 		n, err := tw.buf.Write(buf)
 		if err != nil {
 			return err
 		}
 		tw.writtenBytes += n
-		tw.lastKey = key
+		tw.lastKey = entry.key
 		if tw.writtenBytes > tempBlockThreshold {
 			err := tw.flushDataBlock()
 			if err != nil {
@@ -87,15 +85,17 @@ func (tw *TempWriter) Write(entries []*DataEntry) error {
 
 // data entry or index entry
 // { key length, value length, key, (opKind, value) }
-func (tw *TempWriter) buildEntry(key, val []byte) []byte {
-	keyLen, valLen := len(key), len(val)
+func (tw *TempWriter) buildEntry(entry *DataEntry) []byte {
+	key, val, opType := entry.key, entry.value, entry.opType
+
+	keyLen, valLen := len(key), len(val)+1
 	needed := 2*binary.MaxVarintLen64 + keyLen + valLen
 
 	buf := make([]byte, needed)
 	n := binary.PutUvarint(buf, uint64(keyLen))
 	n += binary.PutUvarint(buf[n:], uint64(valLen))
 	copy(buf[n:], key)
-	copy(buf[n+keyLen:], val)
+	copy(buf[n+keyLen:], encoder.Encode(opType, val))
 	used := n + keyLen + valLen
 
 	return buf[:used]
@@ -126,7 +126,12 @@ func (tw *TempWriter) buildIndexEntry() []byte {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint32(buf[:4], uint32(tw.curOffset))
 	binary.LittleEndian.PutUint32(buf[4:], uint32(tw.writtenBytes))
-	return tw.buildEntry(tw.lastKey, encoder.Encode(encoder.OpTypeSet, buf))
+	entry := &DataEntry{
+		key:    tw.lastKey,
+		value:  buf,
+		opType: encoder.OpTypeSet,
+	}
+	return tw.buildEntry(entry)
 }
 
 func (tw *TempWriter) buildFooterBlock() []byte {
