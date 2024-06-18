@@ -22,8 +22,15 @@ func NewFlusher(memtable *Memtable, file *os.File) *Flusher {
 func (f *Flusher) Flush() error {
 	de := make([]*DataEntry, 0, 500)
 	iterator := f.memtable.Iterator()
+	key, val := iterator.Current()
+	entry := &DataEntry{
+		key:    key,
+		value:  val[1:],
+		opType: encoder.OpType(val[0]),
+	}
+	de = append(de, entry)
 	for iterator.HasNext() {
-		key, val := iterator.Next()
+		key, val = iterator.Next()
 		entry := &DataEntry{
 			key:    key,
 			value:  val[1:],
