@@ -171,37 +171,9 @@ func (it *SSTableIterator) Next() (bool, error) {
 	if it.curOffset >= it.stopOffset {
 		return false, nil
 	}
-	startPosition := it.curOffset
-
-	keyLen, err := binary.ReadUvarint(it.reader)
-	if err != nil {
-		return false, err
-	}
-	it.curOffset += binary.PutUvarint(make([]byte, 10), keyLen)
-
-	valLen, err := binary.ReadUvarint(it.reader)
-	if err != nil {
-		return false, err
-	}
-	it.curOffset += binary.PutUvarint(make([]byte, 10), valLen)
-
-	if it.curOffset+int(keyLen+valLen) > it.stopOffset {
-		it.curOffset = startPosition
-		return false, nil
-	}
-
-	key := make([]byte, keyLen)
-	if _, err := io.ReadFull(it.reader, key); err != nil {
-		return false, err
-	}
-	it.curOffset += int(keyLen)
-
-	value := make([]byte, valLen)
-	if _, err := io.ReadFull(it.reader, value); err != nil {
-		return false, err
-	}
-	it.curOffset += int(valLen)
-	it.entry = &DataEntry{key: key, value: value[1:], opType: encoder.OpType(value[0])}
+	entry, offset := readEntry(it.reader)
+	it.entry = entry
+	it.curOffset += offset
 
 	return true, nil
 }

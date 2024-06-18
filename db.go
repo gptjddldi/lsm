@@ -1,8 +1,11 @@
 package lsm
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"sync"
 
@@ -220,4 +223,29 @@ func OpenSSTable(filename string) (*SSTable, error) {
 	}
 	sst := NewSSTable(file)
 	return sst, nil
+}
+
+func readEntry(reader *bufio.Reader) (*DataEntry, int) {
+	keyLen, valLen := readEntryLengths(reader)
+	key := make([]byte, keyLen)
+	val := make([]byte, valLen)
+
+	io.ReadFull(reader, key)
+	io.ReadFull(reader, val)
+
+	opType := encoder.OpType(val[0])
+	de := &DataEntry{
+		key:    key,
+		value:  val[1:],
+		opType: opType,
+	}
+	keyLenBytes := binary.PutUvarint(make([]byte, 10), uint64(keyLen))
+	valLenBytes := binary.PutUvarint(make([]byte, 10), uint64(valLen))
+	return de, keyLen + valLen + keyLenBytes + valLenBytes
+}
+
+func readEntryLengths(reader *bufio.Reader) (int, int) {
+	keyLen, _ := binary.ReadUvarint(reader)
+	valLen, _ := binary.ReadUvarint(reader)
+	return int(keyLen), int(valLen)
 }
