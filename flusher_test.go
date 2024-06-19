@@ -2,10 +2,11 @@ package lsm
 
 import (
 	"fmt"
-	"github.com/gptjddldi/lsm/db/storage"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/gptjddldi/lsm/db/storage"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFlusher_Flush(t *testing.T) {
@@ -22,7 +23,7 @@ func TestFlusher_Flush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	meta := provider.PrepareNewFile()
+	meta := provider.PrepareNewFile(0)
 	f, err := provider.OpenFileForWriting(meta)
 	if err != nil {
 		t.Fatal(err)

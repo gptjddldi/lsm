@@ -15,19 +15,7 @@ import (
 
 const (
 	memtableSizeLimitBytes = 2 << 20 // 2MB
-	memtableFlushThreshold = 5 << 20
-	maxLevel               = 6
 )
-
-var maxLevelSSTables = map[int]int{
-	0: 4,
-	1: 8,
-	2: 16,
-	3: 32,
-	4: 64,
-	5: 128,
-	6: 256,
-}
 
 var ErrorKeyNotFound = errors.New("key not found")
 
@@ -35,10 +23,6 @@ type DataEntry struct {
 	key    []byte
 	value  []byte
 	opType encoder.OpType
-}
-
-type level struct {
-	sstables []*SSTable // SSTables in this level
 }
 
 type DB struct {
@@ -80,11 +64,11 @@ func Open(dirname string) (*DB, error) {
 			sstables: make([]*SSTable, 0),
 		}
 	}
+	db.levels = levels
 	err = db.loadSSTFilesFromDisk()
 	if err != nil {
 		return nil, err
 	}
-	db.levels = levels
 	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
 	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
@@ -111,13 +95,38 @@ func (db *DB) doCompaction() {
 
 func (db *DB) checkAndTriggerCompaction() bool {
 	readyToExit := true
-	for idx, level := range db.levels {
-		if len(level.sstables) > maxLevelSSTables[idx] {
+
+	if db.needL0Compaction() {
+		db.compactionChan <- 0
+		readyToExit = false
+	}
+
+	if !db.needLevelNCompactions() {
+		readyToExit = false
+	}
+
+	return readyToExit
+}
+
+func (db *DB) needL0Compaction() bool {
+	return len(db.levels[0].sstables) > l0Capacity
+}
+
+func (db *DB) needLevelNCompactions() bool {
+	for idx := range db.levels {
+		if idx == 0 {
+			continue
+		}
+		if db.needLevelNCompaction(idx) {
 			db.compactionChan <- idx
-			readyToExit = false
+			return true
 		}
 	}
-	return readyToExit
+	return false
+}
+
+func (db *DB) needLevelNCompaction(level int) bool {
+	return db.levels[level].TotalSize() > calculateLevelSize(level)
 }
 
 func (db *DB) doFlushing() {
@@ -180,7 +189,7 @@ func (db *DB) prepMemtableForKV(key, val []byte) {
 }
 
 func (db *DB) flushMemtable(m *Memtable) error {
-	meta := db.dataStorage.PrepareNewFile()
+	meta := db.dataStorage.PrepareNewFile(0)
 	f, err := db.dataStorage.OpenFileForWriting(meta)
 	if err != nil {
 		return err
@@ -207,13 +216,18 @@ func (db *DB) loadSSTFilesFromDisk() error {
 		if !f.IsSSTable() {
 			continue
 		}
-		sst, err := OpenSSTable(f.Name())
+		sst, err := db.OpenSSTableByFileName(f.Path())
 		if err != nil {
 			return err
 		}
 		db.levels[f.Level()].sstables = append(db.levels[f.Level()].sstables, sst)
 	}
 	return nil
+}
+
+func (db *DB) OpenSSTable(file *os.File) (*SSTable, error) {
+	sst := NewSSTable(file)
+	return sst, nil
 }
 
 func OpenSSTable(filename string) (*SSTable, error) {
@@ -248,4 +262,13 @@ func readEntryLengths(reader *bufio.Reader) (int, int) {
 	keyLen, _ := binary.ReadUvarint(reader)
 	valLen, _ := binary.ReadUvarint(reader)
 	return int(keyLen), int(valLen)
+}
+
+func (db *DB) OpenSSTableByFileName(fileName string) (*SSTable, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	return db.OpenSSTable(file)
+
 }

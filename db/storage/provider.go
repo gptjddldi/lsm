@@ -23,6 +23,7 @@ type FileMetadata struct {
 	name     string
 	level    int
 	fileType FileType
+	path     string
 }
 
 func (f *FileMetadata) IsSSTable() bool {
@@ -39,6 +40,10 @@ func (f *FileMetadata) Level() int {
 
 func (f *FileMetadata) Name() string {
 	return f.name
+}
+
+func (f *FileMetadata) Path() string {
+	return f.path
 }
 
 func NewProvider(dataDir string) (*Provider, error) {
@@ -83,6 +88,7 @@ func (s *Provider) ListFiles() ([]*FileMetadata, error) {
 			level:    fileLevel,
 			fileType: fileTypeSSTable,
 			name:     f.Name(),
+			path:     filepath.Join(s.dataDir, f.Name()),
 		})
 		s.nextFileNum()
 	}
@@ -94,20 +100,21 @@ func (s *Provider) nextFileNum() int {
 	return s.fileNum
 }
 
-func (s *Provider) generateFileName(fileNumber int) string {
-	return fmt.Sprintf("%06d.sst", fileNumber)
+func (s *Provider) generateFileName(level, seq int) string {
+	return fmt.Sprintf("%1d_%06d.sst", level, seq)
 }
 
-func (s *Provider) PrepareNewFile() *FileMetadata {
+func (s *Provider) PrepareNewFile(level int) *FileMetadata {
 	return &FileMetadata{
 		fileNum:  s.nextFileNum(),
+		level:    level,
 		fileType: fileTypeSSTable,
 	}
 }
 
 func (s *Provider) OpenFileForWriting(meta *FileMetadata) (*os.File, error) {
 	const openFlags = os.O_RDWR | os.O_CREATE | os.O_EXCL
-	filename := s.generateFileName(meta.fileNum)
+	filename := s.generateFileName(meta.level, meta.fileNum)
 	file, err := os.OpenFile(filepath.Join(s.dataDir, filename), openFlags, 0644)
 	if err != nil {
 		return nil, err
@@ -117,7 +124,7 @@ func (s *Provider) OpenFileForWriting(meta *FileMetadata) (*os.File, error) {
 
 func (s *Provider) OpenFileForReading(meta *FileMetadata) (*os.File, error) {
 	const openFlags = os.O_RDONLY
-	filename := s.generateFileName(meta.fileNum)
+	filename := s.generateFileName(meta.level, meta.fileNum)
 	file, err := os.OpenFile(filepath.Join(s.dataDir, filename), openFlags, 0644)
 	if err != nil {
 		return nil, err

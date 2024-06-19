@@ -71,7 +71,7 @@ func generateSSTable2() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	meta := provider.PrepareNewFile()
+	meta := provider.PrepareNewFile(0)
 	f, err := provider.OpenFileForWriting(meta)
 	if err != nil {
 		return "", err
