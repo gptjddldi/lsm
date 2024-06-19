@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"github.com/gptjddldi/lsm/db/encoder"
-	"io"
+
 	"os"
+
+	"github.com/gptjddldi/lsm/db/encoder"
 )
 
 type SSTable struct {
@@ -106,15 +107,11 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 }
 
 func (s *SSTable) readBlockAt(offset, length uint32) ([]byte, error) {
-	// Seek to the offset
-	_, err := s.file.Seek(int64(offset), io.SeekStart)
-	if err != nil {
-		return nil, err
-	}
-
-	// Read the block
+	// Create a byte slice to hold the block
 	block := make([]byte, length)
-	_, err = s.file.Read(block)
+
+	// Read the block at the specified offset without changing the file's current position
+	_, err := s.file.ReadAt(block, int64(offset))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +151,7 @@ func (s *SSTable) PUT(key, val []byte) error {
 }
 
 func (s *SSTable) Iterator() *SSTableIterator {
+	s.file.Seek(0, 0) // todo: 언제 file 의 위치가 변경되는지 확인 필요함
 	reader := bufio.NewReader(s.file)
 	indexOffset, err := s.indexOffset()
 	if err != nil {
@@ -187,9 +185,9 @@ func (it *SSTableIterator) Key() []byte {
 }
 
 func (it *SSTableIterator) Value() []byte {
-	return it.entry.value[1:]
+	return it.entry.value
 }
 
 func (it *SSTableIterator) OpType() encoder.OpType {
-	return encoder.OpType(it.entry.value[0])
+	return it.entry.opType
 }

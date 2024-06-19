@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"sync"
 
@@ -79,6 +81,17 @@ func Open(dirname string) (*DB, error) {
 	return db, nil
 }
 
+func (db *DB) Close() {
+	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+
+	db.flushingChan <- db.memtables.mutable
+	db.cancel()
+	db.wg.Wait()
+
+	close(db.flushingChan)
+	close(db.compactionChan)
+}
+
 func (db *DB) doCompaction() {
 	defer db.wg.Done()
 	for {
@@ -87,8 +100,8 @@ func (db *DB) doCompaction() {
 			if readyToExit := db.checkAndTriggerCompaction(); readyToExit {
 				return
 			}
-		case <-db.compactionChan:
-			db.compactLevel(0)
+		case l := <-db.compactionChan:
+			db.compactLevel(l)
 		}
 	}
 }
@@ -101,8 +114,14 @@ func (db *DB) checkAndTriggerCompaction() bool {
 		readyToExit = false
 	}
 
-	if !db.needLevelNCompactions() {
-		readyToExit = false
+	for idx := range db.levels {
+		if idx == 0 {
+			continue
+		}
+		if db.needLevelNCompaction(idx) {
+			db.compactionChan <- idx
+			readyToExit = false
+		}
 	}
 
 	return readyToExit
@@ -110,19 +129,6 @@ func (db *DB) checkAndTriggerCompaction() bool {
 
 func (db *DB) needL0Compaction() bool {
 	return len(db.levels[0].sstables) > l0Capacity
-}
-
-func (db *DB) needLevelNCompactions() bool {
-	for idx := range db.levels {
-		if idx == 0 {
-			continue
-		}
-		if db.needLevelNCompaction(idx) {
-			db.compactionChan <- idx
-			return true
-		}
-	}
-	return false
 }
 
 func (db *DB) needLevelNCompaction(level int) bool {
@@ -189,6 +195,7 @@ func (db *DB) prepMemtableForKV(key, val []byte) {
 }
 
 func (db *DB) flushMemtable(m *Memtable) error {
+	fmt.Println("Flushing memtable")
 	meta := db.dataStorage.PrepareNewFile(0)
 	f, err := db.dataStorage.OpenFileForWriting(meta)
 	if err != nil {
@@ -200,9 +207,13 @@ func (db *DB) flushMemtable(m *Memtable) error {
 	if err != nil {
 		return err
 	}
-	sst, err := OpenSSTable(f.Name())
+	sst, err := db.OpenSSTable(f)
 	db.levels[0].sstables = append(db.levels[0].sstables, sst)
 	db.memtables.queue = db.memtables.queue[1:]
+
+	if db.needL0Compaction() {
+		db.compactionChan <- 0
+	}
 
 	return nil
 }
@@ -230,28 +241,57 @@ func (db *DB) OpenSSTable(file *os.File) (*SSTable, error) {
 	return sst, nil
 }
 
-func OpenSSTable(filename string) (*SSTable, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+// todo: can be improved
+func (db *DB) deleteSStableAtLevel(level int, iterators []*SSTableIterator) {
+	iteratorMap := make(map[*SSTable]bool)
+	for _, iterator := range iterators {
+		iteratorMap[iterator.sstable] = true
 	}
-	sst := NewSSTable(file)
-	return sst, nil
+
+	newSSTables := make([]*SSTable, 0)
+	for _, sstable := range db.levels[level].sstables {
+		if iteratorMap[sstable] {
+			if err := os.Remove(sstable.file.Name()); err != nil {
+				log.Printf("Error deleting file: %v", err)
+			}
+		} else {
+			newSSTables = append(newSSTables, sstable)
+		}
+	}
+
+	db.levels[level].sstables = newSSTables
+}
+
+func (db *DB) LeastSstableAtLevel(level int) *SSTable {
+	if len(db.levels[level].sstables) == 0 {
+		return nil
+	}
+	least := db.levels[level].sstables[0]
+	for _, sstable := range db.levels[level].sstables {
+		if sstable.file.Name() < least.file.Name() {
+			least = sstable
+		}
+	}
+	return least
 }
 
 func readEntry(reader *bufio.Reader) (*DataEntry, int) {
 	keyLen, valLen := readEntryLengths(reader)
 	key := make([]byte, keyLen)
-	val := make([]byte, valLen)
+	if keyLen == 0 {
+		fmt.Println(123)
+	}
+	opType := make([]byte, 1)
+	value := make([]byte, valLen-1)
 
 	io.ReadFull(reader, key)
-	io.ReadFull(reader, val)
-
-	opType := encoder.OpType(val[0])
+	io.ReadFull(reader, opType)
+	io.ReadFull(reader, value)
+	//fmt.Println("key", key, "val", value)
 	de := &DataEntry{
 		key:    key,
-		value:  val[1:],
-		opType: opType,
+		value:  value,
+		opType: encoder.OpType(opType[0]),
 	}
 	keyLenBytes := binary.PutUvarint(make([]byte, 10), uint64(keyLen))
 	valLenBytes := binary.PutUvarint(make([]byte, 10), uint64(valLen))
@@ -271,4 +311,8 @@ func (db *DB) OpenSSTableByFileName(fileName string) (*SSTable, error) {
 	}
 	return db.OpenSSTable(file)
 
+}
+
+func (db *DB) L0Compaction() {
+	db.compactLevel(0)
 }
