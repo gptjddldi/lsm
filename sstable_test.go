@@ -57,6 +57,33 @@ func TestSSTable_Iterator(t *testing.T) {
 	os.Remove(f.Name())
 }
 
+func TestSSTableIsInKeyRange(t *testing.T) {
+	fileName, err := generateSSTable2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
+	sst := NewSSTable(f)
+	assert.True(t, sst.IsInKeyRange([]byte("testKey1"), []byte(fmt.Sprintf("testKey%d", N))))
+	assert.True(t, sst.IsInKeyRange([]byte("testKey0"), []byte(fmt.Sprintf("testKey9999%d", N+1))))
+	assert.False(t, sst.IsInKeyRange([]byte(fmt.Sprintf("testKey9999%d", N+1)), []byte(fmt.Sprintf("testKey99999%d", N+2))))
+	assert.True(t, sst.IsInKeyRange([]byte("testKey0"), []byte(fmt.Sprintf("testKey1"))))
+	os.Remove(f.Name())
+}
+
+func TestSSTable_MinMaxKey(t *testing.T) {
+	fileName, err := generateSSTable2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
+	sst := NewSSTable(f)
+	assert.Equal(t, []byte("testKey1"), sst.minKey)
+	assert.Equal(t, []byte("testKey999"), sst.maxKey)
+
+	os.Remove(f.Name())
+}
+
 func generateSSTable2() (string, error) {
 	memtable := NewMemtable(100000)
 	i := 0

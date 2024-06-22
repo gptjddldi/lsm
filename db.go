@@ -316,3 +316,13 @@ func (db *DB) OpenSSTableByFileName(fileName string) (*SSTable, error) {
 func (db *DB) L0Compaction() {
 	db.compactLevel(0)
 }
+
+func (db *DB) involvedIterators(level int, minKey, maxKey []byte) []*SSTableIterator {
+	iterators := make([]*SSTableIterator, 0)
+	for _, sstable := range db.levels[level].sstables {
+		if sstable.IsInKeyRange(minKey, maxKey) {
+			iterators = append(iterators, sstable.Iterator())
+		}
+	}
+	return iterators
+}

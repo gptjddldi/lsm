@@ -14,6 +14,9 @@ type SSTable struct {
 	index *Index
 	// todo: bloom filter
 	file *os.File
+
+	minKey []byte
+	maxKey []byte
 }
 
 type SSTableIterator struct {
@@ -33,7 +36,33 @@ func NewSSTable(file *os.File) *SSTable {
 		return nil
 	}
 	sst.index = index
+
+	sst.minKey = sst.getFirstKeyFromFile()
+	sst.maxKey = index.entries[len(index.entries)-1].key
+
 	return sst
+}
+
+func (s *SSTable) getFirstKeyFromFile() []byte {
+	firstIndexEntry := s.index.entries[0]
+	length := binary.LittleEndian.Uint32(firstIndexEntry.value[4:8])
+
+	buf, err := s.readBlockAt(0, length)
+	if err != nil {
+		return nil
+	}
+
+	var keyLen uint64
+	var n, offset int
+	keyLen, n = binary.Uvarint(buf[offset:])
+
+	offset += n
+	_, n = binary.Uvarint(buf[offset:])
+	offset += n
+	key := buf[offset : offset+int(keyLen)]
+	offset += int(keyLen)
+
+	return key
 }
 
 func (s *SSTable) readFooter() ([]byte, error) {
@@ -144,6 +173,16 @@ func (s *SSTable) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.En
 		}
 	}
 	return nil, ErrorKeyNotFound
+}
+
+func (s *SSTable) IsInKeyRange(min, max []byte) bool {
+	if bytes.Compare(s.minKey, max) > 0 {
+		return false
+	}
+	if bytes.Compare(s.maxKey, min) < 0 {
+		return false
+	}
+	return true
 }
 
 func (s *SSTable) PUT(key, val []byte) error {
