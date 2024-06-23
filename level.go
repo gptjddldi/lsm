@@ -1,5 +1,7 @@
 package lsm
 
+import "math"
+
 const (
 	maxLevel   = 7
 	l0Capacity = 5 // 5개 생기면 l0 compaction
@@ -34,18 +36,9 @@ func (l *level) TotalSize() int {
 }
 
 func calculateLevelSize(level int) int {
-	return memtableSizeLimitBytes * pow(growFactor, level)
+	return memtableSizeLimitBytes * l0Capacity * int(math.Pow(float64(growFactor), float64(level)))
 }
 
 func calculateMaxFileSize(level int) int {
 	return calculateLevelSize(level - 1)
-}
-
-func pow(base, exp int) int {
-	result := 1
-	for exp > 0 {
-		result *= base
-		exp--
-	}
-	return result
 }

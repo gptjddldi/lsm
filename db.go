@@ -82,9 +82,8 @@ func Open(dirname string) (*DB, error) {
 }
 
 func (db *DB) Close() {
-	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
-
 	db.flushingChan <- db.memtables.mutable
+	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
 	db.cancel()
 	db.wg.Wait()
 
@@ -195,7 +194,6 @@ func (db *DB) prepMemtableForKV(key, val []byte) {
 }
 
 func (db *DB) flushMemtable(m *Memtable) error {
-	fmt.Println("Flushing memtable")
 	meta := db.dataStorage.PrepareNewFile(0)
 	f, err := db.dataStorage.OpenFileForWriting(meta)
 	if err != nil {

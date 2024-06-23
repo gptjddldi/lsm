@@ -34,5 +34,22 @@ func (db *DB) compactLevel0() error {
 }
 
 func (db *DB) compactLevelN(level int) error {
+	iterators := make([]*SSTableIterator, 0)
+	targetSst := db.LeastSstableAtLevel(level)
+	minKey := targetSst.minKey
+	maxKey := targetSst.maxKey
+	iterators = append(iterators, targetSst.Iterator())
+	iterators = append(iterators, db.involvedIterators(level+1, minKey, maxKey)...)
+
+	sstList, err := db.mergeIterators(iterators, level+1)
+	if err != nil {
+		return err
+	}
+	db.deleteSStableAtLevel(level, iterators)
+	db.deleteSStableAtLevel(level+1, iterators)
+
+	db.levels[level+1].sstables = append(db.levels[level+1].sstables, sstList...)
+
+	db.compactionChan <- level + 1
 	return nil
 }

@@ -54,6 +54,7 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 		})
 	}
 	de := make([]*DataEntry, 0)
+	totalSize := 0
 	sstables := make([]*SSTable, 0)
 
 	for minHeap.Len() > 0 {
@@ -65,11 +66,13 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 				value:  item.value,
 				opType: item.opType,
 			})
+			totalSize += len(item.key) + len(item.value) + 1
 		}
-		// todo: len(de) 가 아니고 실제 de 크기를 계산해야함
-		if len(de) >= calculateMaxFileSize(targetLevel) {
+
+		if totalSize >= calculateMaxFileSize(targetLevel) {
 			sstables = append(sstables, db.writeIterator(de, targetLevel))
 			de = make([]*DataEntry, 0)
+			totalSize = 0
 		}
 
 		ok, err := item.iterator.Next()
