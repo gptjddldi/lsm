@@ -4,15 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-
 	"os"
 
 	"github.com/gptjddldi/lsm/db/encoder"
 )
 
 type SSTable struct {
-	index *Index
-	// todo: bloom filter
+	index       *Index
+	bloomFilter *BloomFilter
+
 	file *os.File
 
 	minKey []byte
@@ -23,8 +23,8 @@ type SSTableIterator struct {
 	sstable    *SSTable
 	reader     *bufio.Reader
 	entry      *DataEntry
-	curOffset  int
-	stopOffset int
+	curOffset  uint64
+	stopOffset uint64
 }
 
 func NewSSTable(file *os.File) *SSTable {
@@ -36,6 +36,12 @@ func NewSSTable(file *os.File) *SSTable {
 		return nil
 	}
 	sst.index = index
+
+	bloomFilter, err := sst.readBloomFilter()
+	if err != nil {
+		return nil
+	}
+	sst.bloomFilter = bloomFilter
 
 	sst.minKey = sst.getFirstKeyFromFile()
 	sst.maxKey = index.entries[len(index.entries)-1].key
@@ -70,7 +76,7 @@ func (s *SSTable) readFooter() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	footerSize := 8
+	footerSize := 16
 	footer := make([]byte, footerSize)
 	_, err = s.file.ReadAt(footer, fileSize.Size()-int64(footerSize))
 	if err != nil {
@@ -79,16 +85,16 @@ func (s *SSTable) readFooter() ([]byte, error) {
 	return footer, nil
 }
 
-func (s *SSTable) indexLength() (int, error) {
+func (s *SSTable) indexLength() (uint64, error) {
 	footer, err := s.readFooter()
 	if err != nil {
 		return 0, err
 	}
-	return int(binary.LittleEndian.Uint32(footer[:4]) - 8), nil
+	return binary.LittleEndian.Uint64(footer[:8]), nil
 }
 
-func (s *SSTable) indexOffset() (int, error) {
-	indexLength, err := s.indexLength()
+func (s *SSTable) indexOffset() (uint64, error) {
+	footer, err := s.readFooter()
 	if err != nil {
 		return 0, err
 	}
@@ -96,7 +102,17 @@ func (s *SSTable) indexOffset() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return int(fileSize.Size()) - indexLength - 8, nil
+
+	indexSize := binary.LittleEndian.Uint64(footer[:8])
+	bloomFilterSize := binary.LittleEndian.Uint64(footer[8:])
+
+	totalSize := uint64(fileSize.Size())
+
+	// indexOffset 계산
+	// 전체 크기 - (footer 크기 + bloomFilter 크기 + index 크기)
+	indexOffset := totalSize - (16 + bloomFilterSize + indexSize)
+
+	return indexOffset, nil
 }
 
 func (s *SSTable) readIndex() (*Index, error) {
@@ -116,7 +132,62 @@ func (s *SSTable) readIndex() (*Index, error) {
 	return NewIndex(index), nil
 }
 
+func (s *SSTable) bloomFilterOffset() (uint64, error) {
+	fileSize, err := s.file.Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	bloomFilterSize, err := s.bloomFilterSize()
+	if err != nil {
+		return 0, err
+	}
+
+	// 전체 파일 크기
+	totalSize := uint64(fileSize.Size())
+
+	// bloomFilterOffset 계산
+	// 전체 크기 - (footer 크기 + bloomFilter 크기)
+	bloomFilterOffset := totalSize - (16 + bloomFilterSize)
+
+	return bloomFilterOffset, nil
+}
+
+func (s *SSTable) bloomFilterSize() (uint64, error) {
+	footer, err := s.readFooter()
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(footer[8:]), nil
+}
+
+func (s *SSTable) readBloomFilter() (*BloomFilter, error) {
+	bloomFilterOffset, err := s.bloomFilterOffset()
+	if err != nil {
+		return nil, err
+	}
+	bloomFilterSize, err := s.bloomFilterSize()
+	if err != nil {
+		return nil, err
+	}
+	bloomFilter := make([]byte, bloomFilterSize)
+	_, err = s.file.ReadAt(bloomFilter, int64(bloomFilterOffset))
+	if err != nil {
+		return nil, err
+	}
+
+	return LoadBloomFilter(bloomFilter)
+}
+
+func (s *SSTable) Contains(searchKey []byte) bool {
+	return s.bloomFilter.Contains(searchKey)
+}
+
 func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
+	if !s.Contains(searchKey) {
+		return nil, ErrorKeyNotFound
+	}
+
 	ie := s.index.Get(searchKey)
 
 	offset := binary.LittleEndian.Uint32(ie.value[:4])

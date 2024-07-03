@@ -273,7 +273,7 @@ func (db *DB) LeastSstableAtLevel(level int) *SSTable {
 	return least
 }
 
-func readEntry(reader *bufio.Reader) (*DataEntry, int) {
+func readEntry(reader *bufio.Reader) (*DataEntry, uint64) {
 	keyLen, valLen := readEntryLengths(reader)
 	key := make([]byte, keyLen)
 	if keyLen == 0 {
@@ -291,15 +291,15 @@ func readEntry(reader *bufio.Reader) (*DataEntry, int) {
 		value:  value,
 		opType: encoder.OpType(opType[0]),
 	}
-	keyLenBytes := binary.PutUvarint(make([]byte, 10), uint64(keyLen))
-	valLenBytes := binary.PutUvarint(make([]byte, 10), uint64(valLen))
-	return de, keyLen + valLen + keyLenBytes + valLenBytes
+	keyLenBytes := binary.PutUvarint(make([]byte, 10), keyLen)
+	valLenBytes := binary.PutUvarint(make([]byte, 10), valLen)
+	return de, keyLen + valLen + uint64(keyLenBytes) + uint64(valLenBytes)
 }
 
-func readEntryLengths(reader *bufio.Reader) (int, int) {
+func readEntryLengths(reader *bufio.Reader) (uint64, uint64) {
 	keyLen, _ := binary.ReadUvarint(reader)
 	valLen, _ := binary.ReadUvarint(reader)
-	return int(keyLen), int(valLen)
+	return keyLen, valLen
 }
 
 func (db *DB) OpenSSTableByFileName(fileName string) (*SSTable, error) {

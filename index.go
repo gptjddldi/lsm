@@ -57,19 +57,3 @@ func (idx *Index) Get(searchKey []byte) IndexEntry {
 	}
 	return idx.entries[low]
 }
-
-//func (br *blockReader) search(searchKey []byte) int {
-//	low, high := 0, br.numOffsets-1
-//	var mid int
-//	for low < high {
-//		mid = (low + high) / 2
-//		key := br.readKeyAt(mid)
-//		cmp := bytes.Compare(searchKey, key)
-//		if cmp > 0 {
-//			low = mid + 1
-//		} else {
-//			high = mid
-//		}
-//	}
-//	return low
-//}

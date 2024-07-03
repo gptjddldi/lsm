@@ -84,6 +84,22 @@ func TestSSTable_MinMaxKey(t *testing.T) {
 	os.Remove(f.Name())
 }
 
+func TestSSTable_Contains(t *testing.T) {
+	fileName, err := generateSSTable2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
+	sst := NewSSTable(f)
+	for i := 1; i <= N; i++ {
+		assert.True(t, sst.Contains([]byte(fmt.Sprintf("testKey%d", i))))
+	}
+	for i := N + 1; i <= 2*N; i++ {
+		assert.False(t, sst.Contains([]byte(fmt.Sprintf("testKey%d", i))))
+	}
+	os.Remove(f.Name())
+}
+
 func generateSSTable2() (string, error) {
 	memtable := NewMemtable(100000)
 	i := 0
