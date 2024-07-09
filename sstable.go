@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 
 	"github.com/gptjddldi/lsm/db/encoder"
@@ -27,26 +28,26 @@ type SSTableIterator struct {
 	stopOffset uint64
 }
 
-func NewSSTable(file *os.File) *SSTable {
+func NewSSTable(file *os.File) (*SSTable, error) {
 	sst := &SSTable{
 		file: file,
 	}
 	index, err := sst.readIndex()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	sst.index = index
 
 	bloomFilter, err := sst.readBloomFilter()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	sst.bloomFilter = bloomFilter
 
 	sst.minKey = sst.getFirstKeyFromFile()
 	sst.maxKey = index.entries[len(index.entries)-1].key
 
-	return sst
+	return sst, err
 }
 
 func (s *SSTable) getFirstKeyFromFile() []byte {
@@ -184,6 +185,7 @@ func (s *SSTable) Contains(searchKey []byte) bool {
 }
 
 func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
+	fmt.Println(s.minKey)
 	if !s.Contains(searchKey) {
 		return nil, ErrorKeyNotFound
 	}
@@ -200,6 +202,7 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 
 	value, err := s.sequentialSearchBuf(block, searchKey)
 	if err != nil {
+		fmt.Println("HERE!")
 		return nil, err
 	}
 

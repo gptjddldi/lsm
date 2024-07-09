@@ -235,8 +235,7 @@ func (db *DB) loadSSTFilesFromDisk() error {
 }
 
 func (db *DB) OpenSSTable(file *os.File) (*SSTable, error) {
-	sst := NewSSTable(file)
-	return sst, nil
+	return NewSSTable(file)
 }
 
 // todo: can be improved
