@@ -36,6 +36,6 @@ jobs:
         run: git merge origin/${{ github.event.pull_request.head.ref }}
 
       - name: Push changes
-        run: git push origin develop
+        run: git push origin dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
