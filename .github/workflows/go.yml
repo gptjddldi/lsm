@@ -2,7 +2,7 @@ name: Go
 
 on:
   pull_request:
-    branches: [ "master" ]
+    branches: [ "dev" ]
 
 jobs:
 
@@ -36,6 +36,6 @@ jobs:
         run: git merge origin/${{ github.event.pull_request.head.ref }}
 
       - name: Push changes
-        run: git push origin master
+        run: git push origin develop
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
