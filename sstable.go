@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"os"
 
 	"github.com/gptjddldi/lsm/db/encoder"
@@ -185,7 +184,6 @@ func (s *SSTable) Contains(searchKey []byte) bool {
 }
 
 func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
-	fmt.Println(s.minKey)
 	if !s.Contains(searchKey) {
 		return nil, ErrorKeyNotFound
 	}
@@ -202,7 +200,6 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 
 	value, err := s.sequentialSearchBuf(block, searchKey)
 	if err != nil {
-		fmt.Println("HERE!")
 		return nil, err
 	}
 
@@ -259,30 +256,34 @@ func (s *SSTable) IsInKeyRange(min, max []byte) bool {
 	return true
 }
 
-func (s *SSTable) PUT(key, val []byte) error {
-	return nil
-}
-
-func (s *SSTable) Iterator() *SSTableIterator {
-	s.file.Seek(0, 0) // todo: 언제 file 의 위치가 변경되는지 확인 필요함
+func (s *SSTable) Iterator() (*SSTableIterator, error) {
+	_, err := s.file.Seek(0, 0)
+	if err != nil {
+		return nil, err
+	}
 	reader := bufio.NewReader(s.file)
 	indexOffset, err := s.indexOffset()
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return &SSTableIterator{
+
+	iter := &SSTableIterator{
 		sstable:    s,
 		reader:     reader,
 		entry:      &DataEntry{},
 		stopOffset: indexOffset,
 	}
+	return iter, nil
 }
 
 func (it *SSTableIterator) Next() (bool, error) {
 	if it.curOffset >= it.stopOffset {
 		return false, nil
 	}
-	entry, offset := readEntry(it.reader)
+	entry, offset, err := readEntry(it.reader)
+	if err != nil {
+		return false, err
+	}
 	it.entry = entry
 	it.curOffset += offset
 

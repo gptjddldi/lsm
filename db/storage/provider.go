@@ -8,7 +8,7 @@ import (
 
 type Provider struct {
 	dataDir string
-	fileNum int
+	fileNum map[int]int
 }
 
 type FileType int
@@ -47,8 +47,7 @@ func (f *FileMetadata) Path() string {
 }
 
 func NewProvider(dataDir string) (*Provider, error) {
-	s := &Provider{dataDir: dataDir}
-
+	s := &Provider{dataDir: dataDir, fileNum: make(map[int]int)}
 	err := s.ensureDataDirExists()
 	if err != nil {
 		return nil, err
@@ -90,14 +89,17 @@ func (s *Provider) ListFiles() ([]*FileMetadata, error) {
 			name:     f.Name(),
 			path:     filepath.Join(s.dataDir, f.Name()),
 		})
-		s.nextFileNum()
+		// 각 레벨의 최대 파일 번호 업데이트
+		if currentMax, exists := s.fileNum[fileLevel]; !exists || fileNumber > currentMax {
+			s.fileNum[fileLevel] = fileNumber
+		}
 	}
 	return meta, nil
 }
 
-func (s *Provider) nextFileNum() int {
-	s.fileNum++
-	return s.fileNum
+func (s *Provider) nextFileNum(level int) int {
+	s.fileNum[level]++
+	return s.fileNum[level]
 }
 
 func (s *Provider) generateFileName(level, seq int) string {
@@ -106,7 +108,7 @@ func (s *Provider) generateFileName(level, seq int) string {
 
 func (s *Provider) PrepareNewFile(level int) *FileMetadata {
 	return &FileMetadata{
-		fileNum:  s.nextFileNum(),
+		fileNum:  s.nextFileNum(level),
 		level:    level,
 		fileType: fileTypeSSTable,
 	}

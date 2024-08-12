@@ -46,7 +46,10 @@ func TestSSTable_Iterator(t *testing.T) {
 	keys := sortedKeys()
 	sst, err := NewSSTable(f)
 	assert.NoError(t, err)
-	iter := sst.Iterator()
+
+	iter, err := sst.Iterator()
+	assert.NoError(t, err)
+
 	for i := 0; i < 1000; i++ {
 		ok, _ := iter.Next()
 		if !ok {
