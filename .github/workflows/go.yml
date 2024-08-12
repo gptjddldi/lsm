@@ -33,9 +33,9 @@ jobs:
         run: git checkout master
 
       - name: Merge PR branch
-        run: git merge origin/${{ github.event.pull_request.head.ref }}
+        run: git merge origin/dev
 
       - name: Push changes
-        run: git push origin dev
+        run: git push origin master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
