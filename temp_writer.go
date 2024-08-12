@@ -4,30 +4,30 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"github.com/gptjddldi/lsm/db/encoder"
 	"math"
 	"os"
+
+	"github.com/gptjddldi/lsm/db/encoder"
 )
 
 const (
-	maxBlockSize      = 4 << 10
-	offsetSizeInBytes = 4
+	maxBlockSize = 4 << 10
 )
 
-var tempBlockThreshold = int(math.Floor(maxBlockSize * 0.9))
+var BlockThreshold = int(math.Floor(maxBlockSize * 0.9))
 
 type TempWriter struct {
-	buf  *bytes.Buffer
-	file *os.File
-	bw   *bufio.Writer
+	bw *bufio.Writer
 
 	indexLength  int
 	curOffset    int
 	nextOffset   uint32
 	writtenBytes int
 
-	indexBuf *bytes.Buffer
-	lastKey  []byte
+	dataBlockBuf *bytes.Buffer
+	indexBuf     *bytes.Buffer
+	BloomFilter  *BloomFilter
+	lastKey      []byte
 
 	footerBuf *bytes.Buffer
 	offsets   []uint32
@@ -35,45 +35,52 @@ type TempWriter struct {
 
 func NewTempWriter(file *os.File) *TempWriter {
 	return &TempWriter{
-		buf:       bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
-		file:      file,
-		bw:        bufio.NewWriter(file),
-		indexBuf:  bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
-		footerBuf: bytes.NewBuffer(make([]byte, 0, 8)),
+		dataBlockBuf: bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
+		bw:           bufio.NewWriter(file),
+		indexBuf:     bytes.NewBuffer(make([]byte, 0, maxBlockSize)),
+		BloomFilter:  NewBloomFilter(),
+		footerBuf:    bytes.NewBuffer(make([]byte, 0, 8)),
 	}
 }
 
 // compaction / flush 시 호출
 func (tw *TempWriter) Write(entries []*DataEntry) error {
 	for _, entry := range entries {
-		buf := tw.buildEntry(entry)
-		tw.growIfNeeded(len(buf), tw.buf)
-		n, err := tw.buf.Write(buf)
+		tw.BloomFilter.Add(entry.key)
+		n, err := tw.dataBlockBuf.Write(entry.toBytes())
 		if err != nil {
 			return err
 		}
 		tw.writtenBytes += n
 		tw.lastKey = entry.key
-		if tw.writtenBytes > tempBlockThreshold {
+		if tw.writtenBytes > BlockThreshold {
 			err := tw.flushDataBlock()
 			if err != nil {
 				return err
 			}
 		}
 	}
-
 	err := tw.flushDataBlock()
 	if err != nil {
 		return err
 	}
 
-	footer := tw.buildFooterBlock()
-	_, err = tw.bw.ReadFrom(tw.indexBuf)
+	indexLen, err := tw.bw.ReadFrom(tw.indexBuf)
 	if err != nil {
 		return err
 	}
 
-	tw.growIfNeeded(len(footer), tw.footerBuf)
+	bloomFilterBuf := &bytes.Buffer{}
+	_, err = tw.BloomFilter.filter.WriteTo(bloomFilterBuf)
+	if err != nil {
+		return err
+	}
+	bloomFilterLen, err := tw.bw.ReadFrom(bloomFilterBuf)
+	if err != nil {
+		return err
+	}
+
+	footer := tw.buildFooterBlock(indexLen, bloomFilterLen)
 	tw.footerBuf.Write(footer)
 	_, err = tw.bw.ReadFrom(tw.footerBuf)
 	if err != nil {
@@ -83,40 +90,20 @@ func (tw *TempWriter) Write(entries []*DataEntry) error {
 	return nil
 }
 
-// data entry or index entry
-// { key length, value length, key, (opKind, value) }
-func (tw *TempWriter) buildEntry(entry *DataEntry) []byte {
-	key, val, opType := entry.key, entry.value, entry.opType
-
-	keyLen, valLen := len(key), len(val)+1
-	needed := 2*binary.MaxVarintLen64 + keyLen + valLen
-
-	buf := make([]byte, needed)
-	n := binary.PutUvarint(buf, uint64(keyLen))
-	n += binary.PutUvarint(buf[n:], uint64(valLen))
-	copy(buf[n:], key)
-	copy(buf[n+keyLen:], encoder.Encode(opType, val))
-	used := n + keyLen + valLen
-
-	return buf[:used]
-}
-
 func (tw *TempWriter) flushDataBlock() error {
-	if tw.writtenBytes <= 0 {
+	if tw.writtenBytes == 0 {
 		return nil
 	}
-	n, err := tw.bw.ReadFrom(tw.buf)
+	n, err := tw.bw.ReadFrom(tw.dataBlockBuf)
 	if err != nil {
 		return err
 	}
 
 	entry := tw.buildIndexEntry()
-	tw.growIfNeeded(len(entry), tw.indexBuf)
-	k, err := tw.indexBuf.Write(entry)
+	_, err = tw.indexBuf.Write(entry)
 	if err != nil {
 		return err
 	}
-	tw.trackOffset(uint32(k))
 	tw.writtenBytes = 0
 	tw.curOffset += int(n)
 	return nil
@@ -131,29 +118,30 @@ func (tw *TempWriter) buildIndexEntry() []byte {
 		value:  buf,
 		opType: encoder.OpTypeSet,
 	}
-	return tw.buildEntry(entry)
+	return entry.toBytes()
 }
 
-func (tw *TempWriter) buildFooterBlock() []byte {
-	offsetLength := len(tw.offsets)
-	needed := (offsetLength + 2) * 4
-	buf := make([]byte, needed)
-	for i, offset := range tw.offsets {
-		binary.LittleEndian.PutUint32(buf[i*4:i*4+4], offset)
-	}
-
-	binary.LittleEndian.PutUint32(buf[needed-8:needed-4], uint32(tw.indexBuf.Len()+needed))
-	binary.LittleEndian.PutUint32(buf[needed-4:needed], uint32(offsetLength))
+// footer block 에 넣어야 하는 건 index block 의 길이와 bloom filter 의 길이
+func (tw *TempWriter) buildFooterBlock(indexLen, bloomLen int64) []byte {
+	buf := make([]byte, 16)
+	binary.LittleEndian.PutUint64(buf[:8], uint64(indexLen))
+	binary.LittleEndian.PutUint64(buf[8:], uint64(bloomLen))
 	return buf
 }
 
-func (tw *TempWriter) growIfNeeded(needed int, buf *bytes.Buffer) {
-	available := buf.Available()
-	if needed > available {
-		buf.Grow(needed)
-	}
-}
-func (tw *TempWriter) trackOffset(n uint32) {
-	tw.offsets = append(tw.offsets, tw.nextOffset)
-	tw.nextOffset += n
+// { key length, value length, key, (opKind, value) }
+func (de *DataEntry) toBytes() []byte {
+	key, val, opType := de.key, de.value, de.opType
+
+	keyLen, valLen := len(key), len(val)+1
+	needed := 2*binary.MaxVarintLen64 + keyLen + valLen
+
+	buf := make([]byte, needed)
+	n := binary.PutUvarint(buf, uint64(keyLen))
+	n += binary.PutUvarint(buf[n:], uint64(valLen))
+	copy(buf[n:], key)
+	copy(buf[n+keyLen:], encoder.Encode(opType, val))
+	used := n + keyLen + valLen
+
+	return buf[:used]
 }

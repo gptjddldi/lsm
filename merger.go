@@ -3,7 +3,6 @@ package lsm
 import (
 	"bytes"
 	"container/heap"
-
 	"github.com/gptjddldi/lsm/db/encoder"
 )
 
@@ -70,7 +69,11 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 		}
 
 		if totalSize >= calculateMaxFileSize(targetLevel) {
-			sstables = append(sstables, db.writeIterator(de, targetLevel))
+			iter, err := db.writeIterator(de, targetLevel)
+			if err != nil {
+				return nil, err
+			}
+			sstables = append(sstables, iter)
 			de = make([]*DataEntry, 0)
 			totalSize = 0
 		}
@@ -90,21 +93,30 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 		})
 	}
 
-	sstables = append(sstables, db.writeIterator(de, targetLevel))
+	iter, err := db.writeIterator(de, targetLevel)
+	if err != nil {
+		return nil, err
+	}
+
+	sstables = append(sstables, iter)
 
 	return sstables, nil
 }
 
 // level 마다 개당 용량있고, 그거에 도달하면 호출됨
-func (db *DB) writeIterator(entries []*DataEntry, targetLevel int) *SSTable {
+func (db *DB) writeIterator(entries []*DataEntry, targetLevel int) (*SSTable, error) {
 	meta := db.dataStorage.PrepareNewFile(targetLevel)
-	f, _ := db.dataStorage.OpenFileForWriting(meta)
-
-	//defer f.Close()
+	f, err := db.dataStorage.OpenFileForWriting(meta)
+	if err != nil {
+		return nil, err
+	}
 
 	writer := NewTempWriter(f)
 	writer.Write(entries)
 
-	sst, _ := db.OpenSSTable(f)
-	return sst
+	sst, err := db.OpenSSTable(f)
+	if err != nil {
+		return nil, err
+	}
+	return sst, nil
 }
