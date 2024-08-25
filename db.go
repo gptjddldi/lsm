@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	memtableSizeLimitBytes = 10 << 20 // 100MB
+	memtableSizeLimitBytes = 10 << 20 // 10MB
 )
 
 var ErrorKeyNotFound = errors.New("key not found")
@@ -77,7 +77,6 @@ func Open(dirname string) (*DB, error) {
 		return nil, err
 	}
 	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
-	db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
 
 	db.wg.Add(2)
 	go db.doCompaction()
@@ -194,9 +193,15 @@ func (db *DB) Insert(key, val []byte) {
 }
 
 func (db *DB) Get(key []byte) ([]byte, error) {
+	encodedValue, err := db.memtables.mutable.Get(key)
+	if err != nil && errors.Is(err, ErrorKeyNotFound) {
+		return nil, err
+	} else if err == nil {
+		return db.handleEncodedValue(encodedValue)
+	}
 	for i := len(db.memtables.queue) - 1; i >= 0; i-- {
 		m := db.memtables.queue[i]
-		encodedValue, err := m.Get(key)
+		encodedValue, err = m.Get(key)
 		if err != nil {
 			continue
 		} // Only NotFound error is expected
@@ -229,9 +234,12 @@ func (db *DB) Delete(key []byte) {
 func (db *DB) prepMemtableForKV(key, val []byte) {
 	if !db.memtables.mutable.HasRoomForWrite(key, val) {
 		db.memtables.queue = append(db.memtables.queue, db.memtables.mutable)
-		db.flushingChan <- db.memtables.mutable
-		m := NewMemtable(memtableSizeLimitBytes)
-		db.memtables.mutable = m
+		db.flushingChan <- db.memtables.queue[0]
+
+		if len(db.memtables.queue) > 1 {
+			db.memtables.queue = db.memtables.queue[1:]
+		}
+		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
 	}
 }
 
@@ -253,7 +261,6 @@ func (db *DB) flushMemtable(m *Memtable) error {
 	}
 
 	db.levels[0].sstables = append(db.levels[0].sstables, sst)
-	db.memtables.queue = db.memtables.queue[1:]
 
 	db.compactionChan <- 0
 
