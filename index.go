@@ -62,9 +62,26 @@ func NewIndex(indexBytes []byte) *Index {
 
 func (idx *Index) Get(searchKey []byte) IndexEntry {
 	low, high := 0, len(idx.entries)-1
-	var mid int
+	offset := idx.binarySearch(searchKey, low, high)
+
+	return idx.entries[offset]
+}
+
+func (idx *Index) LearnedGet(searchKey []byte) IndexEntry {
+	key, _ := stringToInt(string(searchKey))
+	predicted := idx.learned.Predict(key)
+	low := int(float64(predicted) * 0.99)  // -1%
+	high := int(float64(predicted) * 1.01) // +1%
+
+	offset := idx.binarySearch(searchKey, low, high)
+
+	return idx.entries[offset]
+}
+
+func (idx *Index) binarySearch(searchKey []byte, low, high int) int {
+	high = min(high, len(idx.entries))
 	for low < high {
-		mid = (low + high) / 2
+		mid := (low + high) / 2
 		cmp := bytes.Compare(searchKey, idx.entries[mid].key)
 		if cmp > 0 {
 			low = mid + 1
@@ -72,21 +89,17 @@ func (idx *Index) Get(searchKey []byte) IndexEntry {
 			high = mid
 		}
 	}
-	key, _ := stringToInt(string(searchKey))
-	predicted := idx.learned.Predict(uint64(key))
-	fmt.Println(low, predicted)
-
-	return idx.entries[low]
+	return low
 }
 
-// stringToInt: 6자리 이하 소문자+숫자로 이루어진 스트링 변환
+// stringToInt: 12자리 이하 소문자+숫자로 이루어진 스트링 변환
 // 결과물 간의 비교는 bytes.Compare 과 동일함 (based on lexicographic)
 func stringToInt(s string) (uint64, error) {
 	if len(s) == 0 {
 		return 0, nil
 	}
 
-	if len(s) > 6 {
+	if len(s) > 12 {
 		return 0, fmt.Errorf("string should be less than 6 characters")
 	}
 
@@ -102,7 +115,7 @@ func stringToInt(s string) (uint64, error) {
 	}
 
 	// 6 자리 미만에 zero padding 추가
-	for i := len(s); i < 6; i++ {
+	for i := len(s); i < 12; i++ {
 		s = s + "0"
 	}
 

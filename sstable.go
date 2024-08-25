@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"os"
-
+	"fmt"
 	"github.com/gptjddldi/lsm/db/encoder"
+	"os"
 )
 
 type SSTable struct {
@@ -188,6 +188,21 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 		return nil, ErrorKeyNotFound
 	}
 
+	// searchKey > maxKey 또는 searchKey < minKey 인 경우 NOT FOUND
+	if bytes.Compare(searchKey, s.maxKey) == 1 || bytes.Compare(searchKey, s.minKey) == -1 {
+		return nil, ErrorKeyNotFound
+	}
+
+	ret, err := s.indexGet(searchKey)
+	ret2, _ := s.learnedGet(searchKey)
+
+	if ret != nil && ret2 != nil && !bytes.Equal(ret.Value(), ret2.Value()) {
+		fmt.Println("ret != ret2", string(searchKey), string(ret.Value()), string(ret2.Value()))
+	}
+	return ret, err
+}
+
+func (s *SSTable) indexGet(searchKey []byte) (*encoder.EncodedValue, error) {
 	ie := s.index.Get(searchKey)
 
 	offset := binary.LittleEndian.Uint32(ie.value[:4])
@@ -202,7 +217,24 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 	if err != nil {
 		return nil, err
 	}
+	return value, nil
+}
 
+func (s *SSTable) learnedGet(searchKey []byte) (*encoder.EncodedValue, error) {
+	ie := s.index.LearnedGet(searchKey)
+
+	offset := binary.LittleEndian.Uint32(ie.value[:4])
+	length := binary.LittleEndian.Uint32(ie.value[4:8])
+
+	block, err := s.readBlockAt(offset, length)
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := s.sequentialSearchBuf(block, searchKey)
+	if err != nil {
+		return nil, err
+	}
 	return value, nil
 }
 
