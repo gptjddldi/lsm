@@ -56,8 +56,35 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 	totalSize := 0
 	sstables := make([]*SSTable, 0)
 
+	var before []byte
+	var nextIter func(iterator *SSTableIterator) error
+	nextIter = func(iterator *SSTableIterator) error {
+		ok, err := iterator.Next()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		heap.Push(minHeap, &MinHeapItem{
+			iterator: iterator,
+			key:      iterator.Key(),
+			opType:   iterator.OpType(),
+			value:    iterator.Value(),
+		})
+		return nil
+	}
+
 	for minHeap.Len() > 0 {
 		item := heap.Pop(minHeap).(*MinHeapItem)
+
+		if bytes.Compare(before, item.key) == 0 {
+			err := nextIter(item.iterator)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
 
 		if item.opType != encoder.OpTypeDelete {
 			de = append(de, &DataEntry{
@@ -65,6 +92,7 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 				value:  item.value,
 				opType: item.opType,
 			})
+			before = item.key
 			totalSize += len(item.key) + len(item.value) + 1
 		}
 
@@ -78,19 +106,10 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 			totalSize = 0
 		}
 
-		ok, err := item.iterator.Next()
+		err := nextIter(item.iterator)
 		if err != nil {
 			return nil, err
 		}
-		if !ok {
-			continue
-		}
-		heap.Push(minHeap, &MinHeapItem{
-			iterator: item.iterator,
-			key:      item.iterator.Key(),
-			opType:   item.iterator.OpType(),
-			value:    item.iterator.Value(),
-		})
 	}
 
 	iter, err := db.writeIterator(de, targetLevel)
