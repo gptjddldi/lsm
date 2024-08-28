@@ -22,7 +22,7 @@ func init() {
 }
 
 func BenchmarkSSTSearch(b *testing.B) {
-	d, err := Open("demo-data")
+	d, err := Open("demo-data", false)
 	if err != nil {
 		log.Fatal(err)
 	}

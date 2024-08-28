@@ -21,7 +21,7 @@ func TestSstable_Get(t *testing.T) {
 	}
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 
-	sst, err := NewSSTable(f)
+	sst, err := NewSSTable(f, false)
 	assert.NoError(t, err)
 	value, err := sst.Get([]byte("testkey1"))
 	assert.NoError(t, err)
@@ -44,7 +44,7 @@ func TestSSTable_Iterator(t *testing.T) {
 	}
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	keys := sortedKeys()
-	sst, err := NewSSTable(f)
+	sst, err := NewSSTable(f, false)
 	assert.NoError(t, err)
 
 	iter, err := sst.Iterator()
@@ -68,7 +68,7 @@ func TestSSTableIsInKeyRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
-	sst, err := NewSSTable(f)
+	sst, err := NewSSTable(f, false)
 	assert.NoError(t, err)
 	assert.True(t, sst.IsInKeyRange([]byte("testkey1"), []byte(fmt.Sprintf("testkey%d", N))))
 	assert.True(t, sst.IsInKeyRange([]byte("testkey0"), []byte(fmt.Sprintf("testkey9999%d", N+1))))
@@ -83,7 +83,7 @@ func TestSSTable_MinMaxKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
-	sst, err := NewSSTable(f)
+	sst, err := NewSSTable(f, false)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("testkey1"), sst.minKey)
 	assert.Equal(t, []byte("testkey999"), sst.maxKey)
@@ -97,7 +97,7 @@ func TestSSTable_Contains(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
-	sst, err := NewSSTable(f)
+	sst, err := NewSSTable(f, false)
 	assert.NoError(t, err)
 	for i := 1; i <= N; i++ {
 		assert.True(t, sst.Contains([]byte(fmt.Sprintf("testkey%d", i))))

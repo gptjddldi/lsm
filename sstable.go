@@ -5,18 +5,21 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/gptjddldi/lsm/db/encoder"
 	"os"
+
+	"github.com/gptjddldi/lsm/db/encoder"
 )
 
 type SSTable struct {
-	index       *Index
+	index       *BaseIndex
 	bloomFilter *BloomFilter
 
 	file *os.File
 
 	minKey []byte
 	maxKey []byte
+
+	useLearnedIndex bool
 }
 
 type SSTableIterator struct {
@@ -27,15 +30,17 @@ type SSTableIterator struct {
 	stopOffset uint64
 }
 
-func NewSSTable(file *os.File) (*SSTable, error) {
+func NewSSTable(file *os.File, useLearnedIndex bool) (*SSTable, error) {
 	sst := &SSTable{
-		file: file,
+		file:            file,
+		useLearnedIndex: useLearnedIndex,
 	}
-	index, err := sst.readIndex()
+
+	index, err := sst.buildIndex()
 	if err != nil {
 		return nil, err
 	}
-	sst.index = index
+	sst.index = &index
 
 	bloomFilter, err := sst.readBloomFilter()
 	if err != nil {
@@ -44,13 +49,13 @@ func NewSSTable(file *os.File) (*SSTable, error) {
 	sst.bloomFilter = bloomFilter
 
 	sst.minKey = sst.getFirstKeyFromFile()
-	sst.maxKey = index.entries[len(index.entries)-1].key
+	sst.maxKey = (*sst.index).LastEntry().key
 
 	return sst, err
 }
 
 func (s *SSTable) getFirstKeyFromFile() []byte {
-	firstIndexEntry := s.index.entries[0]
+	firstIndexEntry := (*s.index).FirstEntry()
 	length := binary.LittleEndian.Uint32(firstIndexEntry.value[4:8])
 
 	buf, err := s.readBlockAt(0, length)
@@ -115,7 +120,7 @@ func (s *SSTable) indexOffset() (uint64, error) {
 	return indexOffset, nil
 }
 
-func (s *SSTable) readIndex() (*Index, error) {
+func (s *SSTable) buildIndex() (BaseIndex, error) {
 	indexLength, err := s.indexLength()
 	if err != nil {
 		return nil, err
@@ -128,6 +133,10 @@ func (s *SSTable) readIndex() (*Index, error) {
 	_, err = s.file.ReadAt(index, int64(indexOffset))
 	if err != nil {
 		return nil, err
+	}
+
+	if s.useLearnedIndex {
+		return NewLearnedIndex(index), nil
 	}
 	return NewIndex(index), nil
 }
@@ -203,7 +212,7 @@ func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
 }
 
 func (s *SSTable) indexGet(searchKey []byte) (*encoder.EncodedValue, error) {
-	ie := s.index.Get(searchKey)
+	ie := (*s.index).Get(searchKey)
 
 	offset := binary.LittleEndian.Uint32(ie.value[:4])
 	length := binary.LittleEndian.Uint32(ie.value[4:8])
@@ -221,7 +230,7 @@ func (s *SSTable) indexGet(searchKey []byte) (*encoder.EncodedValue, error) {
 }
 
 func (s *SSTable) learnedGet(searchKey []byte) (*encoder.EncodedValue, error) {
-	ie := s.index.LearnedGet(searchKey)
+	ie := (*s.index).Get(searchKey)
 
 	offset := binary.LittleEndian.Uint32(ie.value[:4])
 	length := binary.LittleEndian.Uint32(ie.value[4:8])

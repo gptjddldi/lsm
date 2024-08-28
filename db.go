@@ -45,9 +45,11 @@ type DB struct {
 	cancel       context.CancelFunc
 	isCompacting []bool
 	compactionMu sync.RWMutex
+
+	useLearnedIndex bool
 }
 
-func Open(dirname string) (*DB, error) {
+func Open(dirname string, useLearnedIndex bool) (*DB, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	dataStorage, err := storage.NewProvider(dirname)
@@ -57,12 +59,13 @@ func Open(dirname string) (*DB, error) {
 	}
 
 	db := &DB{
-		dataStorage:    dataStorage,
-		compactionChan: make(chan int, 1000),
-		flushingChan:   make(chan *Memtable, 1000),
-		ctx:            ctx,
-		cancel:         cancel,
-		isCompacting:   make([]bool, maxLevel),
+		dataStorage:     dataStorage,
+		compactionChan:  make(chan int, 1000),
+		flushingChan:    make(chan *Memtable, 1000),
+		ctx:             ctx,
+		cancel:          cancel,
+		isCompacting:    make([]bool, maxLevel),
+		useLearnedIndex: useLearnedIndex,
 	}
 
 	levels := make([]*level, maxLevel)
@@ -286,7 +289,7 @@ func (db *DB) loadSSTFilesFromDisk() error {
 }
 
 func (db *DB) OpenSSTable(file *os.File) (*SSTable, error) {
-	return NewSSTable(file)
+	return NewSSTable(file, db.useLearnedIndex)
 }
 
 // todo: can be improved
