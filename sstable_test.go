@@ -23,15 +23,15 @@ func TestSstable_Get(t *testing.T) {
 
 	sst, err := NewSSTable(f)
 	assert.NoError(t, err)
-	value, err := sst.Get([]byte("testKey1"))
+	value, err := sst.Get([]byte("testkey1"))
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("testValue1"), value.Value())
+	assert.Equal(t, []byte("testvalue1"), value.Value())
 
-	value, err = sst.Get([]byte(fmt.Sprint("testKey", N)))
+	value, err = sst.Get([]byte(fmt.Sprint("testkey", N)))
 	assert.NoError(t, err)
-	assert.Equal(t, []byte(fmt.Sprint("testValue", N)), value.Value())
+	assert.Equal(t, []byte(fmt.Sprint("testvalue", N)), value.Value())
 
-	value, err = sst.Get([]byte(fmt.Sprint("testKey", N+1)))
+	value, err = sst.Get([]byte(fmt.Sprint("testkey", N+1)))
 	assert.EqualError(t, err, "key not found")
 
 	os.Remove(f.Name())
@@ -70,10 +70,10 @@ func TestSSTableIsInKeyRange(t *testing.T) {
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	sst, err := NewSSTable(f)
 	assert.NoError(t, err)
-	assert.True(t, sst.IsInKeyRange([]byte("testKey1"), []byte(fmt.Sprintf("testKey%d", N))))
-	assert.True(t, sst.IsInKeyRange([]byte("testKey0"), []byte(fmt.Sprintf("testKey9999%d", N+1))))
-	assert.False(t, sst.IsInKeyRange([]byte(fmt.Sprintf("testKey9999%d", N+1)), []byte(fmt.Sprintf("testKey99999%d", N+2))))
-	assert.True(t, sst.IsInKeyRange([]byte("testKey0"), []byte(fmt.Sprintf("testKey1"))))
+	assert.True(t, sst.IsInKeyRange([]byte("testkey1"), []byte(fmt.Sprintf("testkey%d", N))))
+	assert.True(t, sst.IsInKeyRange([]byte("testkey0"), []byte(fmt.Sprintf("testkey9999%d", N+1))))
+	assert.False(t, sst.IsInKeyRange([]byte(fmt.Sprintf("testkey9999%d", N+1)), []byte(fmt.Sprintf("testkey99999%d", N+2))))
+	assert.True(t, sst.IsInKeyRange([]byte("testkey0"), []byte(fmt.Sprintf("testkey1"))))
 	os.Remove(f.Name())
 }
 
@@ -85,8 +85,8 @@ func TestSSTable_MinMaxKey(t *testing.T) {
 	f, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	sst, err := NewSSTable(f)
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("testKey1"), sst.minKey)
-	assert.Equal(t, []byte("testKey999"), sst.maxKey)
+	assert.Equal(t, []byte("testkey1"), sst.minKey)
+	assert.Equal(t, []byte("testkey999"), sst.maxKey)
 
 	os.Remove(f.Name())
 }
@@ -100,10 +100,10 @@ func TestSSTable_Contains(t *testing.T) {
 	sst, err := NewSSTable(f)
 	assert.NoError(t, err)
 	for i := 1; i <= N; i++ {
-		assert.True(t, sst.Contains([]byte(fmt.Sprintf("testKey%d", i))))
+		assert.True(t, sst.Contains([]byte(fmt.Sprintf("testkey%d", i))))
 	}
 	for i := N + 1; i <= 2*N; i++ {
-		assert.False(t, sst.Contains([]byte(fmt.Sprintf("testKey%d", i))))
+		assert.False(t, sst.Contains([]byte(fmt.Sprintf("testkey%d", i))))
 	}
 	os.Remove(f.Name())
 }
@@ -113,8 +113,8 @@ func generateSSTable2() (string, error) {
 	i := 0
 	for i < N {
 		i++
-		key := []byte(fmt.Sprintf("testKey%d", i))
-		value := []byte(fmt.Sprintf("testValue%d", i))
+		key := []byte(fmt.Sprintf("testkey%d", i))
+		value := []byte(fmt.Sprintf("testvalue%d", i))
 		memtable.Insert(key, value)
 	}
 
@@ -138,7 +138,7 @@ func generateSSTable2() (string, error) {
 func sortedKeys() []string {
 	keys := make([]string, N) // Initialize the slice with length N
 	for i := 0; i < N; i++ {
-		keys[i] = fmt.Sprintf("testKey%d", i+1)
+		keys[i] = fmt.Sprintf("testkey%d", i+1)
 	}
 	sort.Strings(keys)
 	return keys
