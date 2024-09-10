@@ -5,19 +5,25 @@ import (
 )
 
 func Compare(a, b []byte, number bool) int {
-	if number {
-		numA := ByteToInt(a)
-		numB := ByteToInt(b)
+	if !number {
+		return bytes.Compare(a, b)
+	}
 
-		if numA > numB {
-			return 1
-		} else if numA < numB {
+	if len(a) < len(b) {
+		return -1
+	} else if len(a) > len(b) {
+		return 1
+	}
+
+	for i := 0; i < len(a); i++ {
+		if a[i] < b[i] {
 			return -1
-		} else {
-			return 0
+		} else if a[i] > b[i] {
+			return 1
 		}
 	}
-	return bytes.Compare(a, b) // Default byte comparison
+
+	return 0
 }
 
 func ByteToInt(b []byte) int {
