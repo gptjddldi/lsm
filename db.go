@@ -79,7 +79,7 @@ func Open(dirname string, useLearnedIndex bool) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, useLearnedIndex)
 
 	db.wg.Add(2)
 	go db.doCompaction()
@@ -90,8 +90,10 @@ func Open(dirname string, useLearnedIndex bool) (*DB, error) {
 
 func (db *DB) Close() {
 	// Flush the current mutable memtable
-	db.flushingChan <- db.memtables.mutable
-	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+	if db.memtables.mutable.Size() > 0 {
+		db.flushingChan <- db.memtables.mutable
+		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, db.useLearnedIndex)
+	}
 
 	// Trigger final compactions
 	db.checkAndTriggerCompaction()
@@ -132,7 +134,6 @@ func (db *DB) processRemainingCompactions() {
 }
 
 func (db *DB) processCompaction(l int) {
-	fmt.Println("compaction level", l)
 	db.compactionMu.Lock()
 	if db.isCompacting[l] {
 		db.compactionMu.Unlock()
@@ -242,7 +243,7 @@ func (db *DB) prepMemtableForKV(key, val []byte) {
 		if len(db.memtables.queue) > 1 {
 			db.memtables.queue = db.memtables.queue[1:]
 		}
-		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, db.useLearnedIndex)
 	}
 }
 

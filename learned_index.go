@@ -3,8 +3,7 @@ package lsm
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
-
+	"github.com/gptjddldi/lsm/db/compare"
 	"github.com/gptjddldi/lsm/db/regression"
 )
 
@@ -16,7 +15,9 @@ type LearnedIndex struct {
 func NewLearnedIndex(indexBytes []byte) BaseIndex {
 	var entries []IndexEntry
 	buf := bytes.NewBuffer(indexBytes)
-
+	x := make([]uint64, 0)
+	y := make([]uint64, 0)
+	i := 0
 	for {
 		keyLen, _ := binary.ReadUvarint(buf)
 		if keyLen == 0 {
@@ -37,17 +38,12 @@ func NewLearnedIndex(indexBytes []byte) BaseIndex {
 		val := make([]byte, valLen)
 		buf.Read(val)
 
-		entries = append(entries, IndexEntry{key: key, value: val})
-	}
+		str := uint64(compare.ByteToInt(key))
+		x = append(x, str)
+		y = append(y, uint64(i))
+		i++
 
-	// train 방식 최적화 가능
-	x := make([]uint64, len(entries))
-	y := make([]uint64, len(entries))
-	for i, entry := range entries {
-		str, _ := stringToInt(string(entry.key))
-		x[i] = str
-		y[i] = uint64(i)
-		// TODO: mode 에 따라서 들어가는 key 가 바뀌어야 함.
+		entries = append(entries, IndexEntry{key: key, value: val})
 	}
 	b := regression.NewRegression()
 	b.Train(x, y)
@@ -56,10 +52,10 @@ func NewLearnedIndex(indexBytes []byte) BaseIndex {
 }
 
 func (idx *LearnedIndex) Get(searchKey []byte) IndexEntry {
-	key, _ := stringToInt(string(searchKey))
+	key := uint64(compare.ByteToInt(searchKey))
 	predicted := idx.learned.Predict(key)
-	low := int(float64(predicted) * 0.99)  // -1%
-	high := int(float64(predicted) * 1.01) // +1%
+	low := int(predicted) - int(float64(len(idx.entries))*0.001)  // -1%
+	high := int(predicted) + int(float64(len(idx.entries))*0.001) // +1%
 
 	offset := idx.binarySearch(searchKey, low, high)
 
@@ -75,10 +71,11 @@ func (idx *LearnedIndex) LastEntry() IndexEntry {
 }
 
 func (idx *LearnedIndex) binarySearch(searchKey []byte, low, high int) int {
-	high = min(high, len(idx.entries))
+	high = min(high, len(idx.entries)-1)
+	low = min(max(low, 0), high)
 	for low < high {
 		mid := (low + high) / 2
-		cmp := bytes.Compare(searchKey, idx.entries[mid].key)
+		cmp := compare.Compare(searchKey, idx.entries[mid].key, true)
 		if cmp > 0 {
 			low = mid + 1
 		} else {
@@ -86,41 +83,4 @@ func (idx *LearnedIndex) binarySearch(searchKey []byte, low, high int) int {
 		}
 	}
 	return low
-}
-
-func stringToInt(s string) (uint64, error) {
-	if len(s) == 0 {
-		return 0, nil
-	}
-
-	if len(s) > 12 {
-		return 0, fmt.Errorf("string should be less than 6 characters")
-	}
-
-	base := uint64(36) // 10 (digits) + 26 (lowercase)
-	charToValue := make(map[rune]uint64)
-
-	for i := 0; i < 10; i++ {
-		charToValue[rune('0'+i)] = uint64(i)
-	}
-
-	for i := 0; i < 26; i++ {
-		charToValue[rune('a'+i)] = uint64(i + 10)
-	}
-
-	// 6 자리 미만에 zero padding 추가
-	for i := len(s); i < 12; i++ {
-		s = s + "0"
-	}
-
-	var result uint64 = 0
-	for _, char := range s {
-		value, exists := charToValue[char]
-		if !exists {
-			return 0, fmt.Errorf("invalid character is contained")
-		}
-		result = result*base + value
-	}
-
-	return result, nil
 }

@@ -1,8 +1,9 @@
 package lsm
 
 import (
-	"bytes"
 	"container/heap"
+
+	"github.com/gptjddldi/lsm/db/compare"
 	"github.com/gptjddldi/lsm/db/encoder"
 )
 
@@ -14,28 +15,35 @@ type MinHeapItem struct {
 	Timestamp int64 // todo: implement time stamp
 }
 
-type MinHeap []*MinHeapItem
+type MinHeap struct {
+	items           []*MinHeapItem
+	useLearnedIndex bool // Added useLearnedIndex attribute
+}
 
-func (h MinHeap) Len() int { return len(h) }
+func (h MinHeap) Len() int { return len(h.items) }
 
-func (h MinHeap) Less(i, j int) bool { return bytes.Compare(h[i].key, h[j].key) < 0 }
+func (h MinHeap) Less(i, j int) bool {
+	return compare.Compare(h.items[i].key, h.items[j].key, h.useLearnedIndex) < 0
+}
 
-func (h MinHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h MinHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
 
 func (h *MinHeap) Push(x interface{}) {
-	*h = append(*h, x.(*MinHeapItem))
+	h.items = append(h.items, x.(*MinHeapItem))
 }
 
 func (h *MinHeap) Pop() interface{} {
-	old := *h
+	old := h.items
 	n := len(old)
 	item := old[n-1]
-	*h = old[0 : n-1]
+	h.items = old[0 : n-1]
 	return item
 }
 
 func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*SSTable, error) {
-	minHeap := &MinHeap{}
+	minHeap := &MinHeap{
+		useLearnedIndex: db.useLearnedIndex,
+	}
 	heap.Init(minHeap)
 
 	for _, it := range iterators {
@@ -78,7 +86,7 @@ func (db *DB) mergeIterators(iterators []*SSTableIterator, targetLevel int) ([]*
 	for minHeap.Len() > 0 {
 		item := heap.Pop(minHeap).(*MinHeapItem)
 
-		if bytes.Compare(before, item.key) == 0 {
+		if compare.Compare(before, item.key, db.useLearnedIndex) == 0 {
 			err := nextIter(item.iterator)
 			if err != nil {
 				return nil, err

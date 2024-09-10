@@ -11,9 +11,9 @@ type Memtable struct {
 	sizeLimit int
 }
 
-func NewMemtable(sizeLimit int) *Memtable {
+func NewMemtable(sizeLimit int, useLearnedIndex bool) *Memtable {
 	m := &Memtable{
-		sl:        skiplist.NewSkipList(),
+		sl:        skiplist.NewSkipList(useLearnedIndex),
 		sizeUsed:  0,
 		sizeLimit: sizeLimit,
 	}

@@ -3,6 +3,7 @@ package skiplist
 import (
 	"bytes"
 	"errors"
+	"github.com/gptjddldi/lsm/db/compare"
 	"math"
 	"math/rand"
 )
@@ -40,12 +41,13 @@ func randomHeight() int {
 }
 
 type SkipList struct {
-	head   *node
-	height int
+	head            *node
+	height          int
+	useLearnedIndex bool
 }
 
-func NewSkipList() (sl *SkipList) {
-	sl = &SkipList{}
+func NewSkipList(useLearnedIndex bool) (sl *SkipList) {
+	sl = &SkipList{useLearnedIndex: useLearnedIndex}
 	sl.head = &node{}
 	sl.height = 1
 	return
@@ -58,7 +60,7 @@ func (sl *SkipList) search(key []byte) (*node, [MaxHeight]*node) {
 	prev := sl.head
 	for level := sl.height - 1; level >= 0; level-- {
 		for next = prev.tower[level]; next != nil; next = prev.tower[level] {
-			if bytes.Compare(next.key, key) >= 0 {
+			if compare.Compare(next.key, key, sl.useLearnedIndex) >= 0 {
 				break
 			}
 			prev = next

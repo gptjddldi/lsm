@@ -3,6 +3,8 @@ package lsm
 import (
 	"bytes"
 	"encoding/binary"
+
+	"github.com/gptjddldi/lsm/db/compare"
 )
 
 type BaseIndex interface {
@@ -69,7 +71,7 @@ func (idx *Index) binarySearch(searchKey []byte, low, high int) int {
 	high = min(high, len(idx.entries))
 	for low < high {
 		mid := (low + high) / 2
-		cmp := bytes.Compare(searchKey, idx.entries[mid].key)
+		cmp := compare.Compare(searchKey, idx.entries[mid].key, false)
 		if cmp > 0 {
 			low = mid + 1
 		} else {

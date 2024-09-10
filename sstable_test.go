@@ -109,7 +109,7 @@ func TestSSTable_Contains(t *testing.T) {
 }
 
 func generateSSTable2() (string, error) {
-	memtable := NewMemtable(100000)
+	memtable := NewMemtable(100000, false)
 	i := 0
 	for i < N {
 		i++
