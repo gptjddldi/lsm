@@ -10,7 +10,7 @@ import (
 )
 
 func TestFlusher_Flush(t *testing.T) {
-	memtable := NewMemtable(1024)
+	memtable := NewMemtable(1024, false)
 	i := 0
 	for memtable.Size() < 1024 {
 		i++

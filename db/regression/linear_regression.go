@@ -15,10 +15,6 @@ func (lr *LinearRegression) Predict(x uint64) uint64 {
 
 // Train y = alpha + beta*x
 func (lr *LinearRegression) Train(x, y []uint64) {
-	if len(x) != len(y) {
-		panic("stat: slice length mismatch")
-	}
-
 	xu, xv := MeanVariance(x)
 	yu := Mean(y)
 	cov := covarianceMeans(x, y, xu, yu)
@@ -67,37 +63,3 @@ func covarianceMeans(x, y []uint64, xmean, ymean float64) float64 {
 	}
 	return cov / n
 }
-
-//func stringToInt(s string) (uint64, error) {
-//	if len(s) == 0 {
-//		return 0, nil
-//	}
-//
-//	if len(s) > 6 {
-//		return 0, fmt.Errorf("string should be less than 5 characters")
-//	}
-//
-//	base := uint64(36) // 10 (digits) + 26 (lowercase)
-//	charToValue := make(map[rune]uint64)
-//
-//	// 숫자 (0-9) 매핑
-//	for i := 0; i < 10; i++ {
-//		charToValue[rune('0'+i)] = uint64(i)
-//	}
-//
-//	// 소문자 (a-z) 매핑
-//	for i := 0; i < 26; i++ {
-//		charToValue[rune('a'+i)] = uint64(i + 10)
-//	}
-//
-//	var result uint64 = 0
-//	for _, char := range s {
-//		value, exists := charToValue[char]
-//		if !exists {
-//			return 0, fmt.Errorf("invalid character is contained")
-//		}
-//		result = result*base + value
-//	}
-//
-//	return result, nil
-//}

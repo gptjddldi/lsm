@@ -2,21 +2,23 @@ package lsm
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
-	"fmt"
-	"github.com/gptjddldi/lsm/db/encoder"
 	"os"
+
+	"github.com/gptjddldi/lsm/db/compare"
+	"github.com/gptjddldi/lsm/db/encoder"
 )
 
 type SSTable struct {
-	index       *Index
+	index       *BaseIndex
 	bloomFilter *BloomFilter
 
 	file *os.File
 
 	minKey []byte
 	maxKey []byte
+
+	useLearnedIndex bool
 }
 
 type SSTableIterator struct {
@@ -27,15 +29,17 @@ type SSTableIterator struct {
 	stopOffset uint64
 }
 
-func NewSSTable(file *os.File) (*SSTable, error) {
+func NewSSTable(file *os.File, useLearnedIndex bool) (*SSTable, error) {
 	sst := &SSTable{
-		file: file,
+		file:            file,
+		useLearnedIndex: useLearnedIndex,
 	}
-	index, err := sst.readIndex()
+
+	index, err := sst.buildIndex()
 	if err != nil {
 		return nil, err
 	}
-	sst.index = index
+	sst.index = &index
 
 	bloomFilter, err := sst.readBloomFilter()
 	if err != nil {
@@ -44,13 +48,13 @@ func NewSSTable(file *os.File) (*SSTable, error) {
 	sst.bloomFilter = bloomFilter
 
 	sst.minKey = sst.getFirstKeyFromFile()
-	sst.maxKey = index.entries[len(index.entries)-1].key
+	sst.maxKey = (*sst.index).LastEntry().key
 
 	return sst, err
 }
 
 func (s *SSTable) getFirstKeyFromFile() []byte {
-	firstIndexEntry := s.index.entries[0]
+	firstIndexEntry := (*s.index).FirstEntry()
 	length := binary.LittleEndian.Uint32(firstIndexEntry.value[4:8])
 
 	buf, err := s.readBlockAt(0, length)
@@ -115,7 +119,7 @@ func (s *SSTable) indexOffset() (uint64, error) {
 	return indexOffset, nil
 }
 
-func (s *SSTable) readIndex() (*Index, error) {
+func (s *SSTable) buildIndex() (BaseIndex, error) {
 	indexLength, err := s.indexLength()
 	if err != nil {
 		return nil, err
@@ -128,6 +132,10 @@ func (s *SSTable) readIndex() (*Index, error) {
 	_, err = s.file.ReadAt(index, int64(indexOffset))
 	if err != nil {
 		return nil, err
+	}
+
+	if s.useLearnedIndex {
+		return NewLearnedIndex(index), nil
 	}
 	return NewIndex(index), nil
 }
@@ -184,26 +192,20 @@ func (s *SSTable) Contains(searchKey []byte) bool {
 }
 
 func (s *SSTable) Get(searchKey []byte) (*encoder.EncodedValue, error) {
+	// searchKey > maxKey 또는 searchKey < minKey 인 경우 NOT FOUND
+	if compare.Compare(searchKey, s.maxKey, s.useLearnedIndex) == 1 || compare.Compare(searchKey, s.minKey, s.useLearnedIndex) == -1 {
+		return nil, ErrorKeyNotFound
+	}
+
 	if !s.Contains(searchKey) {
 		return nil, ErrorKeyNotFound
 	}
 
-	// searchKey > maxKey 또는 searchKey < minKey 인 경우 NOT FOUND
-	if bytes.Compare(searchKey, s.maxKey) == 1 || bytes.Compare(searchKey, s.minKey) == -1 {
-		return nil, ErrorKeyNotFound
-	}
-
-	ret, err := s.indexGet(searchKey)
-	ret2, _ := s.learnedGet(searchKey)
-
-	if ret != nil && ret2 != nil && !bytes.Equal(ret.Value(), ret2.Value()) {
-		fmt.Println("ret != ret2", string(searchKey), string(ret.Value()), string(ret2.Value()))
-	}
-	return ret, err
+	return s.get(searchKey)
 }
 
-func (s *SSTable) indexGet(searchKey []byte) (*encoder.EncodedValue, error) {
-	ie := s.index.Get(searchKey)
+func (s *SSTable) get(searchKey []byte) (*encoder.EncodedValue, error) {
+	ie := (*s.index).Get(searchKey)
 
 	offset := binary.LittleEndian.Uint32(ie.value[:4])
 	length := binary.LittleEndian.Uint32(ie.value[4:8])
@@ -213,29 +215,7 @@ func (s *SSTable) indexGet(searchKey []byte) (*encoder.EncodedValue, error) {
 		return nil, err
 	}
 
-	value, err := s.sequentialSearchBuf(block, searchKey)
-	if err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
-func (s *SSTable) learnedGet(searchKey []byte) (*encoder.EncodedValue, error) {
-	ie := s.index.LearnedGet(searchKey)
-
-	offset := binary.LittleEndian.Uint32(ie.value[:4])
-	length := binary.LittleEndian.Uint32(ie.value[4:8])
-
-	block, err := s.readBlockAt(offset, length)
-	if err != nil {
-		return nil, err
-	}
-
-	value, err := s.sequentialSearchBuf(block, searchKey)
-	if err != nil {
-		return nil, err
-	}
-	return value, nil
+	return s.sequentialSearchBuf(block, searchKey)
 }
 
 func (s *SSTable) readBlockAt(offset, length uint32) ([]byte, error) {
@@ -267,7 +247,7 @@ func (s *SSTable) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.En
 		offset += int(keyLen)
 		val := buf[offset : offset+int(valLen)]
 		offset += int(valLen)
-		cmp := bytes.Compare(searchKey, key)
+		cmp := compare.Compare(searchKey, key, s.useLearnedIndex)
 		if cmp == 0 {
 			return encoder.Decode(val), nil
 		}
@@ -279,10 +259,10 @@ func (s *SSTable) sequentialSearchBuf(buf []byte, searchKey []byte) (*encoder.En
 }
 
 func (s *SSTable) IsInKeyRange(min, max []byte) bool {
-	if bytes.Compare(s.minKey, max) > 0 {
+	if compare.Compare(s.minKey, max, s.useLearnedIndex) > 0 {
 		return false
 	}
-	if bytes.Compare(s.maxKey, min) < 0 {
+	if compare.Compare(s.maxKey, min, s.useLearnedIndex) < 0 {
 		return false
 	}
 	return true

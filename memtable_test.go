@@ -7,7 +7,7 @@ import (
 )
 
 func TestMemtable_Insert(t *testing.T) {
-	memtable := NewMemtable(1024)
+	memtable := NewMemtable(1024, false)
 	key := []byte("testkey")
 	value := []byte("testValue")
 	memtable.Insert(key, value)
@@ -20,7 +20,7 @@ func TestMemtable_Insert(t *testing.T) {
 }
 
 func TestMemtable_InsertTombstone(t *testing.T) {
-	memtable := NewMemtable(1024)
+	memtable := NewMemtable(1024, false)
 	key := []byte("testkey")
 	memtable.Insert(key, []byte("testValue"))
 	memtable.InsertTombstone(key)
@@ -32,7 +32,7 @@ func TestMemtable_InsertTombstone(t *testing.T) {
 }
 
 func TestMemtable_InsertTombstone2(t *testing.T) {
-	memtable := NewMemtable(1024)
+	memtable := NewMemtable(1024, false)
 	key := []byte("testkey")
 	memtable.Insert(key, []byte("testValue"))
 	memtable.InsertTombstone(key)
@@ -46,7 +46,7 @@ func TestMemtable_InsertTombstone2(t *testing.T) {
 }
 
 func TestMemtable_HasRoomForWrite(t *testing.T) {
-	memtable := NewMemtable(1024)
+	memtable := NewMemtable(1024, false)
 	assert.Equal(t, true, memtable.HasRoomForWrite([]byte("testKey"), []byte("testValue")))
 	i := 0
 	for memtable.Size() < 1024 {

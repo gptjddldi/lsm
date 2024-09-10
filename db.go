@@ -45,9 +45,11 @@ type DB struct {
 	cancel       context.CancelFunc
 	isCompacting []bool
 	compactionMu sync.RWMutex
+
+	useLearnedIndex bool
 }
 
-func Open(dirname string) (*DB, error) {
+func Open(dirname string, useLearnedIndex bool) (*DB, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	dataStorage, err := storage.NewProvider(dirname)
@@ -57,12 +59,13 @@ func Open(dirname string) (*DB, error) {
 	}
 
 	db := &DB{
-		dataStorage:    dataStorage,
-		compactionChan: make(chan int, 1000),
-		flushingChan:   make(chan *Memtable, 1000),
-		ctx:            ctx,
-		cancel:         cancel,
-		isCompacting:   make([]bool, maxLevel),
+		dataStorage:     dataStorage,
+		compactionChan:  make(chan int, 1000),
+		flushingChan:    make(chan *Memtable, 1000),
+		ctx:             ctx,
+		cancel:          cancel,
+		isCompacting:    make([]bool, maxLevel),
+		useLearnedIndex: useLearnedIndex,
 	}
 
 	levels := make([]*level, maxLevel)
@@ -76,7 +79,7 @@ func Open(dirname string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, useLearnedIndex)
 
 	db.wg.Add(2)
 	go db.doCompaction()
@@ -87,8 +90,10 @@ func Open(dirname string) (*DB, error) {
 
 func (db *DB) Close() {
 	// Flush the current mutable memtable
-	db.flushingChan <- db.memtables.mutable
-	db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+	if db.memtables.mutable.Size() > 0 {
+		db.flushingChan <- db.memtables.mutable
+		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, db.useLearnedIndex)
+	}
 
 	// Trigger final compactions
 	db.checkAndTriggerCompaction()
@@ -129,7 +134,6 @@ func (db *DB) processRemainingCompactions() {
 }
 
 func (db *DB) processCompaction(l int) {
-	fmt.Println("compaction level", l)
 	db.compactionMu.Lock()
 	if db.isCompacting[l] {
 		db.compactionMu.Unlock()
@@ -239,7 +243,7 @@ func (db *DB) prepMemtableForKV(key, val []byte) {
 		if len(db.memtables.queue) > 1 {
 			db.memtables.queue = db.memtables.queue[1:]
 		}
-		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes)
+		db.memtables.mutable = NewMemtable(memtableSizeLimitBytes, db.useLearnedIndex)
 	}
 }
 
@@ -286,7 +290,7 @@ func (db *DB) loadSSTFilesFromDisk() error {
 }
 
 func (db *DB) OpenSSTable(file *os.File) (*SSTable, error) {
-	return NewSSTable(file)
+	return NewSSTable(file, db.useLearnedIndex)
 }
 
 // todo: can be improved
